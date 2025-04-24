@@ -1,0 +1,18 @@
+FILE_NAME="build_gpu"
+if [ ! -d $FILE_NAME ];then
+  mkdir $FILE_NAME
+fi
+cd $FILE_NAME
+# rm -rf *
+cmake .. \
+-DTPL_ENABLE_PARMETISLIB=TRUE \
+-DTPL_PARMETIS_INCLUDE_DIRS="$PATH_TO_METIS_I64_INC;$PATH_TO_PARMETIS_I64_INC" \
+-DTPL_PARMETIS_LIBRARIES="$PATH_TO_PARMETIS_I64_LIB/libparmetis.a;$PATH_TO_METIS_I64_LIB/libmetis.a;$PATH_TO_GKLIB_LIB/libGKlib.a" \
+-DXSDK_INDEX_SIZE=64 \
+-DTPL_BLAS_LIBRARIES="$PATH_TO_OPENBLAS_LIB/libopenblas.a" \
+-DCMAKE_C_COMPILER=mpicc \
+-DCMAKE_CXX_COMPILER=mpicxx \
+-DTPL_ENABLE_CUDALIB=TRUE \
+-DCUDA_LIBRARIES="/usr/local/cuda/lib64/libcublas.so;/usr/local/cuda/lib64/libcudart.so" \
+-DCMAKE_Fortran_COMPILER=mpif77 \
+-DCMAKE_BUILD_TYPE=Debug

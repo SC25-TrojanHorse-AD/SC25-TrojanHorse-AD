@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.cu": "cuda-cpp",
+        "superlu_ddefs.h": "c",
+        "random": "c"
+    }
+}

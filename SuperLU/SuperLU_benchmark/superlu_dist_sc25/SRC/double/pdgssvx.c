@@ -844,6 +844,14 @@ void pdgssvx(superlu_dist_options_t *options, SuperMatrix *A,
 			gpuMemcpy(Llu->l_tile_offset_hd[bcol], Llu->l_tile_offset_hh[bcol], sizeof(int_t)*(a_nblk+1), gpuMemcpyHostToDevice);
 			gpuMemcpy(Llu->l_bcol_localperm_hd[bcol], Llu->l_bcol_localperm_hh[bcol], sizeof(int_t)*a_lda, gpuMemcpyHostToDevice);
 			gpuMemcpy(Llu->l_bcol_val_hd[bcol], valuea, sizeof(double)*nsupc*a_lda, gpuMemcpyHostToDevice);
+	
+
+			int errid = 0;
+			if ((errid = gpuDeviceSynchronize()) != cudaSuccess)
+			{
+				printf("cuda error %d %s:%d\n", errid, __FILE__, __LINE__);
+				exit(1);
+			}
 		}
 
 		gpuMemcpy(Llu->l_nblk_bcol_prefixsum_d, Llu->l_nblk_bcol_prefixsum_h, sizeof(int_t)*(nsupers+1), gpuMemcpyHostToDevice);
@@ -903,6 +911,7 @@ void pdgssvx(superlu_dist_options_t *options, SuperMatrix *A,
 			Llu->u_bcol_idx_hh[brow] = malloc(sizeof(int_t)*a_nblk);
 			Llu->u_tile_offset_hh[brow] = malloc(sizeof(int_t)*(a_nblk+1));
 			Llu->u_brow_localperm_hh[brow] = malloc(sizeof(int_t)*(metaa[1]/nsupc));
+			memset(Llu->u_brow_localperm_hh[brow], 0, sizeof(int_t)*(metaa[1]/nsupc));
 
 			gpuMalloc(&(Llu->u_bcol_idx_hd[brow]), sizeof(int_t)*a_nblk);
 			gpuMalloc(&(Llu->u_tile_offset_hd[brow]), sizeof(int_t)*(a_nblk+1));
@@ -934,23 +943,34 @@ void pdgssvx(superlu_dist_options_t *options, SuperMatrix *A,
 			gpuMemcpy(Llu->u_tile_offset_hd[brow], Llu->u_tile_offset_hh[brow], sizeof(int_t)*(a_nblk+1), gpuMemcpyHostToDevice);
 			gpuMemcpy(Llu->u_brow_localperm_hd[brow], Llu->u_brow_localperm_hh[brow], sizeof(int_t)*(metaa[1]/nsupc), gpuMemcpyHostToDevice);
 			gpuMemcpy(Llu->u_brow_val_hd[brow], valuea, sizeof(double)*nsupc*(metaa[1]/nsupc), gpuMemcpyHostToDevice);
+
+			int errid = 0;
+			if ((errid = gpuDeviceSynchronize()) != cudaSuccess)
+			{
+				printf("cuda error %d %s:%d\n", errid, __FILE__, __LINE__);
+				exit(1);
+			}
 		}
 
-		gpuMemcpy(Llu->u_nblk_brow_prefixsum_d, Llu->u_nblk_brow_prefixsum_h, sizeof(int_t*)*(nsupers+1), gpuMemcpyHostToDevice);
+		gpuMemcpy(Llu->u_nblk_brow_prefixsum_d, Llu->u_nblk_brow_prefixsum_h, sizeof(int_t)*(nsupers+1), gpuMemcpyHostToDevice);
 		gpuMemcpy(Llu->u_bcol_idx_dd, Llu->u_bcol_idx_hd, sizeof(int_t*)*nsupers, gpuMemcpyHostToDevice);
 		gpuMemcpy(Llu->u_tile_offset_dd, Llu->u_tile_offset_hd, sizeof(int_t*)*nsupers, gpuMemcpyHostToDevice);
 		gpuMemcpy(Llu->u_brow_localperm_dd, Llu->u_brow_localperm_hd, sizeof(int_t*)*nsupers, gpuMemcpyHostToDevice);
 		gpuMemcpy(Llu->u_brow_val_dd, Llu->u_brow_val_hd, sizeof(double*)*nsupers, gpuMemcpyHostToDevice);
 
-
+		int errid = 0;
+		if ((errid = gpuDeviceSynchronize()) != cudaSuccess)
+		{
+			printf("cuda error %d %s:%d\n", errid, __FILE__, __LINE__);
+			exit(1);
+		}
 
 		/* Perform numerical factorization in parallel. */
 		t = SuperLU_timer_();
 		pdgstrf(options, m, n, anorm, LUstruct, grid, stat, info);
 		stat->utime[FACT] = SuperLU_timer_() - t;
 
-		printf("%.2lf + %.2lf + %.2lf = %.2lf\n", stat->utime[FACT] - stat->time_tstrf_update, stat->time_tstrf_update/2, stat->time_tstrf_update/2, stat->utime[FACT]);
-		// stat->utime[FACT] += stat->time_tstrf_update;
+		// printf("%.2lf + %.2lf + %.2lf = %.2lf\n", stat->utime[FACT] - stat->time_tstrf_update, stat->time_tstrf_update/2, stat->time_tstrf_update/2, stat->utime[FACT]);
 
 		if (options->PrintStat)
 		{

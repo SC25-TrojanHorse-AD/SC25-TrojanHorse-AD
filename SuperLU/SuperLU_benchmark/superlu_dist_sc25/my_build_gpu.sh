@@ -14,5 +14,4 @@ cmake .. \
 -DCMAKE_CXX_COMPILER=mpicxx \
 -DTPL_ENABLE_CUDALIB=TRUE \
 -DCUDA_LIBRARIES="/usr/local/cuda/lib64/libcublas.so;/usr/local/cuda/lib64/libcudart.so" \
--DCMAKE_Fortran_COMPILER=mpif77 \
--DCMAKE_BUILD_TYPE=Debug
+-DCMAKE_Fortran_COMPILER=mpif77

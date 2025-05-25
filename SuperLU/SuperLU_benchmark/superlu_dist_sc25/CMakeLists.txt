@@ -195,7 +195,7 @@ if (TPL_ENABLE_CUDALIB)   ## want to use cuda
     find_package(CUDA REQUIRED)
     if (CUDA_FOUND)
       set(CUDA_SEPARABLE_COMPILATION ON)  
-      set(CMAKE_CUDA_ARCHITECTURES 89)
+      set(CMAKE_CUDA_ARCHITECTURES 61)
       if(NOT CMAKE_CUDA_ARCHITECTURES)
         # if(${CMAKE_VERSION} VERSION_LESS_EQUAL "3.13.4")
         #   cuda_select_nvcc_arch_flags(ARCH_FLAGS "Auto") # optional argument for arch to add
@@ -219,9 +219,9 @@ if (TPL_ENABLE_CUDALIB)   ## want to use cuda
         set(CMAKE_CUDA_FLAGS_RELEASE "-O3 --expt-relaxed-constexpr -DNDEBUG" CACHE STRING "")
       endif()
       # set(CMAKE_CUDA_FLAGS_RELEASE "-O3 --expt-relaxed-constexpr -DNDEBUG" CACHE STRING "")
-      set(CMAKE_CUDA_FLAGS_DDEBUG "-O0 --expt-relaxed-constexpr -DDEBUG -g" CACHE STRING "")
-      #set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3")
-      set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O0 -G")
+      #set(CMAKE_CUDA_FLAGS_DDEBUG "-O0 --expt-relaxed-constexpr -DDEBUG -g" CACHE STRING "")
+      set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3")
+      #set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O0 -G")
     endif()
 
 #     find_package(CUB REQUIRED)

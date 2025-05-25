@@ -18,64 +18,63 @@ at the top-level directory.
 #include "dscatter.c"
 #include "../include/yida_thread_pool.h"
 #include "cblas.h"
+// #include "/root/pkg_install/openblas/include/cblas.h"
+//#include "/home/yida/pkg_install/openblas_0.3.28/include/cblas.h"
+// #include "/home/nyd/pkg_install/openblas/include/cblas.h"
+// #include "/home/yida/pkg_install/openblas-0.3.26/include/cblas.h"
 
 void trojan_horse_init(int_t nsupers);
-void trojan_horse_grouped_batched_scatter_l(
-    int_t nsupers,
-    int_t nrow_effective,
-    int_t ncol_effective,
-    int_t nsupc,
-    int_t trsm_bcol,
-    double *bigresult_buf_d,
-    int_t *l_nblk_bcol_prefixsum_h,
-    int_t **l_brow_idx_hh,
-    int_t **l_tile_offset_hh,
-    int_t **l_bcol_localperm_hh,
-    int_t *l_nblk_bcol_prefixsum_d,
-    int_t **l_brow_idx_dd,
-    int_t **l_tile_offset_dd,
-    int_t **l_bcol_localperm_dd,
-    double **l_bcol_val_dd,
-    int_t *metal_d,
-    double *valuel_d,
-    int_t *xsup_d,
-    int_t *xsup,
-    int_t *metau_h,
-    int_t **u_tile_offset_dd,
-    int_t **u_brow_localperm_dd);
-void trojan_horse_grouped_batched_scatter_u(
-    int_t nsupers,
-    int_t nrow_effective,
-    int_t ncol_effective,
-    int_t nsupc,
-    int_t trsm_brow,
-    double *bigresult_buf_d,
-    int_t *u_nblk_brow_prefixsum_h,
-    int_t **u_bcol_idx_hh,
-    int_t **u_tile_offset_hh,
-    int_t **u_brow_localperm_hh,
-    int_t *u_nblk_brow_prefixsum_d,
-    int_t **u_bcol_idx_dd,
-    int_t **u_tile_offset_dd,
-    int_t **u_brow_localperm_dd,
-    double **u_brow_val_dd,
-    int_t *metau_d,
-    double *valueu_d,
-    int_t *xsup_d,
-    int_t *xsup,
-    int_t *metal_h,
-    int_t **l_tile_offset_dd,
-    int_t **l_bcol_localperm_dd);
+// void trojan_horse_grouped_batched_scatter_cpu(
+//     int_t nsupers,
+//     int_t nrow_effective, 
+//     int_t ncol_effective,
+//     int_t nsupc,
+//     int_t level,
+//     double* bigresult_buf_d,
+//     int_t* xsup_d,
+//     int_t* xsup,
+
+//     int_t bcol_nblk, // 0
+//     int_t* l_nblk_bcol_prefixsum_h,
+//     int_t** l_brow_idx_hh,
+//     int_t** l_tile_offset_hh,
+//     int_t** l_bcol_localperm_hh,
+//     int_t* l_nblk_bcol_prefixsum_d,
+//     int_t** l_brow_idx_dd,
+//     int_t** l_tile_offset_dd,
+//     int_t** l_bcol_localperm_dd,
+//     double** l_bcol_val_hh,
+//     int_t* metal_h,
+//     int_t* l_brow_idx_h, // 1
+//     int_t* l_bcol_localperm_h, // 2
+//     int_t* l_tile_offset_h, // 3
+
+//     int_t brow_nblk,
+//     int_t* u_nblk_brow_prefixsum_h,
+//     int_t** u_bcol_idx_hh,
+//     int_t** u_tile_offset_hh,
+//     int_t** u_brow_localperm_hh,
+//     int_t* u_nblk_brow_prefixsum_d,
+//     int_t** u_bcol_idx_dd,
+//     int_t** u_tile_offset_dd,
+//     int_t** u_brow_localperm_dd,
+//     double** u_brow_val_hh,
+//     int_t* metau_h,
+//     int_t* u_bcol_idx_h,
+//     int_t* u_brow_localperm_h,
+//     int_t* u_tile_offset_h
+// );
 void trojan_horse_grouped_batched_scatter(
     int_t nsupers,
     int_t nrow_effective, 
     int_t ncol_effective,
     int_t nsupc,
-    int_t trsm_bcol,
+    int_t level,
     double* bigresult_buf_d,
     int_t* xsup_d,
     int_t* xsup,
 
+    int_t bcol_nblk, // 0
     int_t* l_nblk_bcol_prefixsum_h,
     int_t** l_brow_idx_hh,
     int_t** l_tile_offset_hh,
@@ -86,9 +85,11 @@ void trojan_horse_grouped_batched_scatter(
     int_t** l_bcol_localperm_dd,
     double** l_bcol_val_dd,
     int_t* metal_h,
-    int_t* metal_d,
-    double* valuel_d,
+    int_t* l_brow_idx_d, // 1
+    int_t* l_bcol_localperm_d, // 2
+    int_t* l_tile_offset_d, // 3
 
+    int_t brow_nblk,
     int_t* u_nblk_brow_prefixsum_h,
     int_t** u_bcol_idx_hh,
     int_t** u_tile_offset_hh,
@@ -99,8 +100,9 @@ void trojan_horse_grouped_batched_scatter(
     int_t** u_brow_localperm_dd,
     double** u_brow_val_dd,
     int_t* metau_h,
-    int_t* metau_d,
-    double* valueu_d
+    int_t* u_bcol_idx_d,
+    int_t* u_brow_localperm_d,
+    int_t* u_tile_offset_d
 );
 
 double *stride_rs_buf = NULL;
@@ -282,6 +284,23 @@ typedef struct
     int_t nrow_effective;
     int_t ncol_effective;
     int_t nsupc;
+
+    int_t* l_brow_idx_d; // 1
+    int_t* l_bcol_localperm_d; // 2
+    int_t* l_tile_offset_d; // 3
+
+    int_t* u_bcol_idx_d;
+    int_t* u_brow_localperm_d;
+    int_t* u_tile_offset_d;
+
+    // int_t* l_brow_idx_h; // 1
+    // int_t* l_bcol_localperm_h; // 2
+    // int_t* l_tile_offset_h; // 3
+
+    // int_t* u_bcol_idx_h;
+    // int_t* u_brow_localperm_h;
+    // int_t* u_tile_offset_h;
+    
 } thread_param_t;
 
 void trojan_horse_batched_kernel(void *_param)
@@ -289,18 +308,54 @@ void trojan_horse_batched_kernel(void *_param)
     double one_double = 1.0;
     double zero_double = 0.0;
     int_t iam = grid_glo->iam;
-    int_t level = ((thread_param_t *)(((thread *)_param)->param))->level;
-    int_t nrow_effective = ((thread_param_t *)(((thread *)_param)->param))->nrow_effective;
-    int_t ncol_effective = ((thread_param_t *)(((thread *)_param)->param))->ncol_effective;
-    int_t nsupc = ((thread_param_t *)(((thread *)_param)->param))->nsupc;
+    thread_param_t* param = ((thread_param_t *)(((thread *)_param)->param));
+    int_t level = param->level;
+    int_t nrow_effective = param->nrow_effective;
+    int_t ncol_effective = param->ncol_effective;
+    int_t nsupc = param->nsupc;
 
-    // printf("%d 2\n", level);
+    int_t* l_brow_idx_d = param->l_brow_idx_d;
+    int_t* l_bcol_localperm_d = param->l_bcol_localperm_d;
+    int_t* l_tile_offset_d = param->l_tile_offset_d;
+
+    int_t* u_bcol_idx_d = param->u_bcol_idx_d;
+    int_t* u_brow_localperm_d = param->u_brow_localperm_d;
+    int_t* u_tile_offset_d = param->u_tile_offset_d;
+
+    int errid = 0;
+
+    if ((errid = cudaDeviceSynchronize()) != cudaSuccess)
+    {
+        printf("cuda error 0 %d\n", errid);
+        exit(1);
+    }
 
     // timer_start(&tv_start1);
     if (nrow_effective * ncol_effective * nsupc != 0)
     {
         expand_double_ptr_cuda(&bigresult_buf_d, &bigresult_buf_len, nrow_effective * ncol_effective);
         // printf("cublasDgemm %lld %lld %lld %p %p %p\n", nrow_effective, ncol_effective, nsupc, bigcol_buf_d, bigrow_buf_d, bigresult_buf_d);
+        // double bigcol_buf_h[nrow_effective*nsupc];
+        // double bigrow_buf_h[nsupc*ncol_effective];
+        // gpuMemcpy(bigcol_buf_h, bigcol_buf_d, sizeof(double)*nrow_effective*nsupc, cudaMemcpyDeviceToHost);
+        // gpuMemcpy(bigrow_buf_h, bigrow_buf_d, sizeof(double)*nsupc*ncol_effective, cudaMemcpyDeviceToHost);
+
+        // printf("bigcol %d %dx%d\n", level, nrow_effective, nsupc);
+        // for(int i=0;i<nrow_effective;i++){
+        //     for(int j=0;j<nsupc;j++){
+        //         printf("%.2lf ", bigcol_buf_h[j*nrow_effective+i]);
+        //     }
+        //     printf("\n");
+        // }
+
+        // printf("bigrow %d %dx%d\n", level, nsupc, ncol_effective);
+        // for(int i=0;i<nsupc;i++){
+        //     for(int j=0;j<ncol_effective;j++){
+        //         printf("%.2lf ", bigrow_buf_h[j*nsupc+i]);
+        //     }
+        //     printf("\n");
+        // }
+
         cublasDgemm(
             handle, CUBLAS_OP_N, CUBLAS_OP_N,
             nrow_effective, ncol_effective, nsupc,
@@ -313,6 +368,12 @@ void trojan_horse_batched_kernel(void *_param)
         // cudaMemcpyAsync(bigresult_buf_p, bigresult_buf_d, sizeof(double) * nrow_effective * ncol_effective, cudaMemcpyDeviceToHost, stream);
     }
     // time_tmp3 += timer_end(&tv_start1);
+
+    if ((errid = cudaDeviceSynchronize()) != cudaSuccess)
+    {
+        printf("cuda error 1 %d\n", errid);
+        exit(1);
+    }
 
     cudaDeviceSynchronize();
 
@@ -328,6 +389,7 @@ void trojan_horse_batched_kernel(void *_param)
         xsup_d,
         xsup,
 
+        recv_metal[0],
         Llu->l_nblk_bcol_prefixsum_h,
         Llu->l_brow_idx_hh,
         Llu->l_tile_offset_hh,
@@ -338,9 +400,11 @@ void trojan_horse_batched_kernel(void *_param)
         Llu->l_bcol_localperm_dd,
         Llu->l_bcol_val_dd,
         recv_metal,
-        NULL,
-        NULL,
+        l_brow_idx_d,
+        l_bcol_localperm_d,
+        l_tile_offset_d,
         
+        recv_metau[0],
         Llu->u_nblk_brow_prefixsum_h,
         Llu->u_bcol_idx_hh,
         Llu->u_tile_offset_hh,
@@ -351,22 +415,42 @@ void trojan_horse_batched_kernel(void *_param)
         Llu->u_brow_localperm_dd,
         Llu->u_brow_val_dd,
         recv_metau,
-        NULL,
-        NULL
+        u_bcol_idx_d,
+        u_brow_localperm_d,
+        u_tile_offset_d
     );
+
+    if ((errid = cudaDeviceSynchronize()) != cudaSuccess)
+    {
+        printf("cuda error 2 %d\n", errid);
+        exit(1);
+    }
 
     cudaDeviceSynchronize();
 
-    if ((level + 2) < nsupers && ((level + 2) % LYD_PGRID_Q == iam % LYD_PGRID_Q) && Llu->Lrowind_bc_ptr[LBj((level + 2), grid_glo)])
+    if (((level + 2) < nsupers) && (((level + 2) % LYD_PGRID_Q) == (iam % LYD_PGRID_Q)) && Llu->Lrowind_bc_ptr[LBj((level + 2), grid_glo)])
+    // if (((level + 2) < nsupers) && Llu->Lrowind_bc_ptr[LBj((level + 2), grid_glo)])
     {
         gpuMemcpyAsync(
             Llu->Lnzval_bc_ptr[LBj((level + 2), grid_glo)],
             Llu->l_bcol_val_hd[level + 2],
             sizeof(double) * Llu->Lrowind_bc_ptr[LBj((level + 2), grid_glo)][1] * SuperSize(level + 2),
             gpuMemcpyDeviceToHost, stream);
+
+        // printf("#%d Download %d*double level=%d\n", iam, Llu->Lrowind_bc_ptr[LBj((level + 2), grid_glo)][1] * SuperSize(level + 2), level+2);
+        // int nrow_effective = Llu->Lrowind_bc_ptr[LBj((level + 2), grid_glo)][1];
+        // int nsupc = SuperSize(level + 2);
+        // printf("bigcol %d %dx%d\n", level+2, nrow_effective, nsupc);
+        // for(int i=0;i<nrow_effective;i++){
+        //     for(int j=0;j<nsupc;j++){
+        //         printf("%.2lf ", Llu->Lnzval_bc_ptr[LBj((level + 2), grid_glo)][j*nrow_effective+i]);
+        //     }
+        //     printf("\n");
+        // }
     }
 
-    if ((level + 2) < nsupers && ((level + 2) % LYD_PGRID_P == iam / LYD_PGRID_Q) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
+    // if (((level + 2) < nsupers) && (((level + 2) % LYD_PGRID_P) == (iam / LYD_PGRID_Q)) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
+    if (((level + 2) < nsupers) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
     {
         gpuMemcpyAsync(
             Llu->Unzval_br_ptr[LBi((level + 2), grid_glo)],
@@ -375,10 +459,9 @@ void trojan_horse_batched_kernel(void *_param)
             gpuMemcpyDeviceToHost, stream);
     }
 
-    int errid = 0;
     if ((errid = cudaDeviceSynchronize()) != cudaSuccess)
     {
-        printf("cuda error %d\n", errid);
+        printf("cuda error 3 %d\n", errid);
         exit(1);
     }
 }
@@ -497,6 +580,32 @@ int_t pdgstrf(
     stride_rs_buf = SUPERLU_MALLOC(sizeof(double) * superlu_maxsup * superlu_maxsup);
 
     double *l_fullrow_buf = SUPERLU_MALLOC(sizeof(double) * superlu_maxsup * superlu_maxsup);
+
+    int_t* l_brow_idx_even_d; // 1 <nsupers
+    int_t* l_bcol_localperm_even_d; // 2 <n
+    int_t* l_tile_offset_even_d; // 3 <(nsupers+1)
+    int_t* u_bcol_idx_even_d;
+    int_t* u_brow_localperm_even_d;
+    int_t* u_tile_offset_even_d;
+    cudaMalloc(&l_brow_idx_even_d, sizeof(int_t)*((nsupers) + (n) + (nsupers+1))*2);
+    l_bcol_localperm_even_d = l_brow_idx_even_d + nsupers;
+    l_tile_offset_even_d = l_bcol_localperm_even_d + n;
+    u_bcol_idx_even_d = l_tile_offset_even_d + (nsupers+1);
+    u_brow_localperm_even_d = u_bcol_idx_even_d + nsupers;
+    u_tile_offset_even_d = u_brow_localperm_even_d + n;
+
+    int_t* l_brow_idx_odd_d; // 1 <nsupers
+    int_t* l_bcol_localperm_odd_d; // 2 <n
+    int_t* l_tile_offset_odd_d; // 3 <(nsupers+1)
+    int_t* u_bcol_idx_odd_d;
+    int_t* u_brow_localperm_odd_d;
+    int_t* u_tile_offset_odd_d;
+    cudaMalloc(&l_brow_idx_odd_d, sizeof(int_t)*((nsupers) + (n) + (nsupers+1))*2);
+    l_bcol_localperm_odd_d = l_brow_idx_odd_d + nsupers;
+    l_tile_offset_odd_d = l_bcol_localperm_odd_d + n;
+    u_bcol_idx_odd_d = l_tile_offset_odd_d + (nsupers+1);
+    u_brow_localperm_odd_d = u_bcol_idx_odd_d + nsupers;
+    u_tile_offset_odd_d = u_brow_localperm_odd_d + n;
 
     cublasCreate(&handle);
     cudaStreamCreate(&stream);
@@ -618,7 +727,9 @@ int_t pdgstrf(
             int pivot_rank = (level % LYD_PGRID_P) * LYD_PGRID_Q + (level % LYD_PGRID_Q);
             if ((pivot_rank / LYD_PGRID_Q == iam / LYD_PGRID_Q) || (pivot_rank % LYD_PGRID_Q == iam % LYD_PGRID_Q))
             {
-                stride_recv(pivot_buf, sizeof(double) * nsupc, sizeof(double) * nsupc, nsupc, 0, 10, pivot_rank);
+                // stride_recv(pivot_buf, sizeof(double) * nsupc, sizeof(double) * nsupc, nsupc, 0, 10, pivot_rank);
+                MPI_Status stat;
+                MPI_Recv(pivot_buf, sizeof(double) * nsupc * nsupc, MPI_CHAR, pivot_rank, 0, MPI_COMM_WORLD, &stat);
                 // printf("#%d stride_recv(row_size=%d, stride=%d, nrow=%d, %d->%d)\n", iam, nsupc, nsupc, nsupc, pivot_rank, iam);
             }
             pivot_ptr = pivot_buf;
@@ -648,15 +759,30 @@ int_t pdgstrf(
             meta_idx = 2;
             lda = nrow_effective;
 
+
             timer_start(&tv_start2);
             if (metal[meta_idx] == level)
             {
+                // printf("bigcol %d %dx%d *\n", level, nrow_effective - metal[meta_idx + 1], nsupc);
+                // for(int i=0;i<nrow_effective - metal[meta_idx + 1];i++){
+                //     for(int j=0;j<nsupc;j++){
+                //         printf("%.2lf ", valuel[metal[meta_idx + 1] + j*nrow_effective+i]);
+                //     }
+                //     printf("\n");
+                // }
                 cblas_dtrsm(
                     CblasRowMajor, CblasLeft, CblasLower, CblasNoTrans, CblasNonUnit,
                     nsupc, nrow_effective - metal[meta_idx + 1], 1.0, pivot_ptr, pivot_lda, valuel + metal[meta_idx + 1], nrow_effective);
             }
             else
             {
+                // printf("bigcol %d %dx%d\n", level, nrow_effective, nsupc);
+                // for(int i=0;i<nrow_effective;i++){
+                //     for(int j=0;j<nsupc;j++){
+                //         printf("%.2lf ", valuel[j*nrow_effective+i]);
+                //     }
+                //     printf("\n");
+                // }
                 cblas_dtrsm(
                     CblasRowMajor, CblasLeft, CblasLower, CblasNoTrans, CblasNonUnit,
                     nsupc, nrow_effective, 1.0, pivot_ptr, pivot_lda, valuel, nrow_effective);
@@ -707,8 +833,29 @@ int_t pdgstrf(
                     if (target_prow != prow)
                     {
                         MPI_Request req;
-                        MPI_Send(metau, metau_len, mpi_int_t, target_prow * LYD_PGRID_Q + pcol, 0, MPI_COMM_WORLD);
-                        MPI_Send(valueu, nnz_row, MPI_DOUBLE, target_prow * LYD_PGRID_Q + pcol, 1, MPI_COMM_WORLD);
+                        int target_rank = target_prow * LYD_PGRID_Q + pcol;
+                        MPI_Send(metau, metau_len, mpi_int_t, target_rank, 0, MPI_COMM_WORLD);
+                        MPI_Send(valueu, nnz_row, MPI_DOUBLE, target_rank, 1, MPI_COMM_WORLD);
+
+                        MPI_Send(Llu->u_tile_offset_hd[level], (metau[0]+1), mpi_int_t, target_rank, 201, MPI_COMM_WORLD);
+                        // cudaError_t error = cudaGetLastError();
+                        // printf("CUDA error @201: %s\n", cudaGetErrorString(error));
+
+                        MPI_Send(Llu->u_brow_localperm_hd[level], metau[1]/nsupc, mpi_int_t, target_rank, 202, MPI_COMM_WORLD);
+                        // error = cudaGetLastError();
+                        // printf("CUDA error @202: %s\n", cudaGetErrorString(error));
+
+                        MPI_Send(Llu->u_bcol_idx_hd[level], metau[0], mpi_int_t, target_rank, 203, MPI_COMM_WORLD);
+                        // error = cudaGetLastError();
+                        // printf("CUDA error @203: %s\n", cudaGetErrorString(error));
+                        
+                        // printf("metau %d %d*%d\n", level, nsupc, nnz_row/nsupc);
+                        // for(int i=0;i<nsupc;i++){
+                        //     for(int j=0;j<nnz_row/nsupc;j++){
+                        //         printf("%.2lf ", valueu[j*nsupc+i]);
+                        //     }
+                        //     printf("\n");
+                        // }
                     }
                     else
                     {
@@ -754,9 +901,8 @@ int_t pdgstrf(
                     if (target_prow != iam / LYD_PGRID_Q)
                     {
                         MPI_Request req;
-                        int_t metau_len = 0;
-                        MPI_Send(metau, metau_len, mpi_int_t, target_prow * LYD_PGRID_Q + pcol, 0, MPI_COMM_WORLD);
-                        MPI_Send(valueu, 0, MPI_DOUBLE, target_prow * LYD_PGRID_Q + pcol, 1, MPI_COMM_WORLD);
+                        MPI_Send(metau, 0, mpi_int_t, target_prow * LYD_PGRID_Q + pcol, 0, MPI_COMM_WORLD);
+                        // MPI_Send(valueu, 0, MPI_DOUBLE, target_prow * LYD_PGRID_Q + pcol, 1, MPI_COMM_WORLD);
                     }
                     else
                     {
@@ -817,7 +963,33 @@ int_t pdgstrf(
                 }
                 // timer_start(&tv_start2);
                 MPI_Recv(recv_metau, count, mpi_int_t, (level % LYD_PGRID_P) * LYD_PGRID_Q + pcol, 0, MPI_COMM_WORLD, &mpi_stat);
+                ncol_effective = recv_metau[1]/nsupc;
                 // time_tmp5 += timer_end(&tv_start2);
+
+                timer_start(&tv_start2);
+                MPI_Probe(((level % LYD_PGRID_P) % LYD_PGRID_P) * LYD_PGRID_Q + pcol, 1, MPI_COMM_WORLD, &mpi_stat);
+                time_tmp5 += timer_end(&tv_start2);
+                MPI_Get_count(&mpi_stat, MPI_DOUBLE, &count);
+                if (count > recv_tempu_len)
+                {
+                    if (recv_tempu)
+                    {
+                        SUPERLU_FREE(recv_tempu);
+                    }
+                    recv_tempu = SUPERLU_MALLOC(sizeof(double) * count);
+                    recv_tempu_len = count;
+                }
+                int fetch_rank = (level % LYD_PGRID_P) * LYD_PGRID_Q + pcol;
+                MPI_Recv(recv_tempu, count, MPI_DOUBLE, fetch_rank, 1, MPI_COMM_WORLD, &mpi_stat);
+                if(level%2 == 1){ // odd
+                    MPI_Recv(u_tile_offset_odd_d, (recv_metau[0]+1), mpi_int_t, fetch_rank, 201, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(u_brow_localperm_odd_d, recv_metau[1]/nsupc, mpi_int_t, fetch_rank, 202, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(u_bcol_idx_odd_d, recv_metau[0], mpi_int_t, fetch_rank, 203, MPI_COMM_WORLD, &mpi_stat);
+                }else{ // even
+                    MPI_Recv(u_tile_offset_even_d, (recv_metau[0]+1), mpi_int_t, fetch_rank, 201, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(u_brow_localperm_even_d, recv_metau[1]/nsupc, mpi_int_t, fetch_rank, 202, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(u_bcol_idx_even_d, recv_metau[0], mpi_int_t, fetch_rank, 203, MPI_COMM_WORLD, &mpi_stat);
+                }
             }
             else
             {
@@ -847,23 +1019,6 @@ int_t pdgstrf(
                 recv_metau[1] = 0;
                 recv_metau[2] = 3;
             }
-
-            timer_start(&tv_start2);
-            MPI_Probe(((level % LYD_PGRID_P) % LYD_PGRID_P) * LYD_PGRID_Q + pcol, 1, MPI_COMM_WORLD, &mpi_stat);
-            time_tmp5 += timer_end(&tv_start2);
-            MPI_Get_count(&mpi_stat, MPI_DOUBLE, &count);
-            if (count > recv_tempu_len)
-            {
-                if (recv_tempu)
-                {
-                    SUPERLU_FREE(recv_tempu);
-                }
-                recv_tempu = SUPERLU_MALLOC(sizeof(double) * count);
-                recv_tempu_len = count;
-            }
-            // timer_start(&tv_start2);
-            MPI_Recv(recv_tempu, count, MPI_DOUBLE, (level % LYD_PGRID_P) * LYD_PGRID_Q + pcol, 1, MPI_COMM_WORLD, &mpi_stat);
-            // time_tmp5 += timer_end(&tv_start2);
         }
 
         // Send L
@@ -876,8 +1031,24 @@ int_t pdgstrf(
                     if (target_pcol != iam % LYD_PGRID_Q)
                     {
                         MPI_Request req;
-                        MPI_Send(metal, metal_len, mpi_int_t, prow * LYD_PGRID_Q + target_pcol, 2, MPI_COMM_WORLD);
-                        MPI_Send(valuel, lda * nsupc, MPI_DOUBLE, prow * LYD_PGRID_Q + target_pcol, 3, MPI_COMM_WORLD);
+                        int target_rank = prow * LYD_PGRID_Q + target_pcol;
+                        MPI_Send(metal, metal_len, mpi_int_t, target_rank, 2, MPI_COMM_WORLD);
+                        MPI_Send(valuel, lda * nsupc, MPI_DOUBLE, target_rank, 3, MPI_COMM_WORLD);
+
+                        MPI_Send(Llu->l_tile_offset_hd[level], (metal[0]+1), mpi_int_t, target_rank, 101, MPI_COMM_WORLD);
+                        // cudaError_t error = cudaGetLastError();
+                        // if(error)
+                        // printf("CUDA error @101: %s\n", cudaGetErrorString(error));
+
+                        MPI_Send(Llu->l_bcol_localperm_hd[level], metal[1], mpi_int_t, target_rank, 102, MPI_COMM_WORLD);
+                        // error = cudaGetLastError();
+                        // if(error)
+                        // printf("CUDA error @102: %s\n", cudaGetErrorString(error));
+
+                        MPI_Send(Llu->l_brow_idx_hd[level], metal[0], mpi_int_t, target_rank, 103, MPI_COMM_WORLD);
+                        // error = cudaGetLastError();
+                        // if(error)
+                        // printf("CUDA error @103: %s\n", cudaGetErrorString(error));
                     }
                     else
                     {
@@ -924,9 +1095,8 @@ int_t pdgstrf(
                     if (target_pcol != iam % LYD_PGRID_Q)
                     {
                         MPI_Request req;
-                        int_t metal_len = 0;
-                        MPI_Send(metal, metal_len, mpi_int_t, prow * LYD_PGRID_Q + target_pcol, 2, MPI_COMM_WORLD);
-                        MPI_Send(valuel, 0, MPI_DOUBLE, prow * LYD_PGRID_Q + target_pcol, 3, MPI_COMM_WORLD);
+                        MPI_Send(metal, 0, mpi_int_t, prow * LYD_PGRID_Q + target_pcol, 2, MPI_COMM_WORLD);
+                        // MPI_Send(valuel, 0, MPI_DOUBLE, prow * LYD_PGRID_Q + target_pcol, 3, MPI_COMM_WORLD);
                     }
                     else
                     {
@@ -985,12 +1155,34 @@ int_t pdgstrf(
                         recv_metal_len_odd = count;
                     }
                 }
-                // timer_start(&tv_start2);
                 MPI_Recv(recv_metal, count, mpi_int_t, prow * LYD_PGRID_Q + (level % LYD_PGRID_Q), 2, MPI_COMM_WORLD, &mpi_stat);
-                // time_tmp5 += timer_end(&tv_start2);
                 lda = recv_metal[1];
-                // printf("  #%d<-#%d L meta : %d %d %d %d %d\n", iam, prow * LYD_PGRID_Q + (level%LYD_PGRID_Q),
-                //     recv_metal[0], recv_metal[1], recv_metal[2], recv_metal[3], recv_metal[4]);
+                nrow_effective = recv_metal[1];
+
+                int fetch_rank = prow * LYD_PGRID_Q + level % LYD_PGRID_Q;
+                timer_start(&tv_start2);
+                MPI_Probe(fetch_rank, 3, MPI_COMM_WORLD, &mpi_stat);
+                time_tmp5 += timer_end(&tv_start2);
+                MPI_Get_count(&mpi_stat, MPI_DOUBLE, &count);
+                if (count > recv_templ_len)
+                {
+                    if (recv_templ)
+                    {
+                        SUPERLU_FREE(recv_templ);
+                    }
+                    recv_templ = SUPERLU_MALLOC(sizeof(double) * count);
+                    recv_templ_len = count;
+                }
+                MPI_Recv(recv_templ, count, MPI_DOUBLE, fetch_rank, 3, MPI_COMM_WORLD, &mpi_stat);
+                if(level%2 == 1){ // odd
+                    MPI_Recv(l_tile_offset_odd_d, (recv_metal[0]+1), mpi_int_t, fetch_rank, 101, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(l_bcol_localperm_odd_d, recv_metal[1], mpi_int_t, fetch_rank, 102, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(l_brow_idx_odd_d, recv_metal[0], mpi_int_t, fetch_rank, 103, MPI_COMM_WORLD, &mpi_stat);
+                }else{ // even
+                    MPI_Recv(l_tile_offset_even_d, (recv_metal[0]+1), mpi_int_t, fetch_rank, 101, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(l_bcol_localperm_even_d, recv_metal[1], mpi_int_t, fetch_rank, 102, MPI_COMM_WORLD, &mpi_stat);
+                    MPI_Recv(l_brow_idx_even_d, recv_metal[0], mpi_int_t, fetch_rank, 103, MPI_COMM_WORLD, &mpi_stat);
+                }
             }
             else
             {
@@ -1014,28 +1206,11 @@ int_t pdgstrf(
                     }
                 }
                 // timer_start(&tv_start2);
-                MPI_Recv(recv_metal, count, mpi_int_t, prow * LYD_PGRID_Q + (level % LYD_PGRID_Q), 2, MPI_COMM_WORLD, &mpi_stat);
+                MPI_Recv(recv_metal, 0, mpi_int_t, prow * LYD_PGRID_Q + (level % LYD_PGRID_Q), 2, MPI_COMM_WORLD, &mpi_stat);
                 // time_tmp5 += timer_end(&tv_start2);
                 recv_metal[0] = 0;
                 recv_metal[1] = 0;
             }
-
-            timer_start(&tv_start2);
-            MPI_Probe(prow * LYD_PGRID_Q + level % LYD_PGRID_Q, 3, MPI_COMM_WORLD, &mpi_stat);
-            time_tmp5 += timer_end(&tv_start2);
-            MPI_Get_count(&mpi_stat, MPI_DOUBLE, &count);
-            if (count > recv_templ_len)
-            {
-                if (recv_templ)
-                {
-                    SUPERLU_FREE(recv_templ);
-                }
-                recv_templ = SUPERLU_MALLOC(sizeof(double) * count);
-                recv_templ_len = count;
-            }
-            // timer_start(&tv_start2);
-            MPI_Recv(recv_templ, count, MPI_DOUBLE, prow * LYD_PGRID_Q + level % LYD_PGRID_Q, 3, MPI_COMM_WORLD, &mpi_stat);
-            // time_tmp5 += timer_end(&tv_start2);
         }
         time_tmp4 += timer_end(&tv_start1);
 
@@ -1047,298 +1222,325 @@ int_t pdgstrf(
         }
 
 
-        if ((!recv_metau) || (recv_metau[0] == 0) || (!recv_metal) || (recv_metal[0] == 0) || (nrow_effective == 0) || (ncol_effective == 0))
+        if (!((!recv_metau) || (recv_metau[0] == 0) || (!recv_metal) || (recv_metal[0] == 0) || (nrow_effective == 0) || (ncol_effective == 0)))
         {
             // timer_start(&tv_start1);
             // MPI_Barrier(MPI_COMM_WORLD);
             // time_tmp1 += timer_end(&tv_start1);
             // printf("------#%d level=%d continue---------\n", iam, level);
-            continue;
-        }
+            // continue;
 
-        if (recv_metal)
-        {
-            expand_double_ptr_cuda(&bigcol_buf_d, &bigcol_buf_len, nsupc * nrow_effective);
-            cudaMemcpyAsync(bigcol_buf_d, recv_templ, sizeof(double) * nsupc * nrow_effective, cudaMemcpyHostToDevice, stream);
-        }
-        if (recv_metau)
-        {
-            expand_double_ptr_cuda(&bigrow_buf_d, &bigrow_buf_len, ncol_effective * nsupc);
-            cudaMemcpyAsync(bigrow_buf_d, recv_tempu, sizeof(double) * ncol_effective * nsupc, cudaMemcpyHostToDevice, stream);
-        }
-
-        // SSSSM update high_prio nsupers
-        {
-            int high_prio_nsupers = 1;
-
-            int_t ll_nblk = recv_metal[0];
-            int_t ll_lda = recv_metal[1];
-            int_t lu_nblk = recv_metau[0];
-            int_t lu_lda = SuperSize(level);
-            int_t lu_metaidx = 3;
-            int_t lu_blkidx = 0;
-            double *lvalueu = recv_tempu;
-
-            int_t uu_nblk = recv_metau[0];
-            int_t uu_lda = SuperSize(level);
-            int_t ul_nblk = recv_metal[0];
-            int_t ul_lda = recv_metal[1];
-            int_t ul_metaidx = 2;
-            int_t ul_blkidx = 0;
-            double *uvaluel = recv_templ;
-
-            timer_start(&tv_start1);
-            for (int_t bcr = level + 1; bcr < SUPERLU_MIN(nsupers, level + 1 + high_prio_nsupers); bcr++)
+            if (recv_metal)
             {
-                if ((bcr % LYD_PGRID_Q) == (iam % LYD_PGRID_Q))
+                expand_double_ptr_cuda(&bigcol_buf_d, &bigcol_buf_len, nsupc * nrow_effective);
+                cudaMemcpyAsync(bigcol_buf_d, recv_templ, sizeof(double) * nsupc * nrow_effective, cudaMemcpyHostToDevice, stream);
+            }
+            if (recv_metau)
+            {
+                expand_double_ptr_cuda(&bigrow_buf_d, &bigrow_buf_len, ncol_effective * nsupc);
+                cudaMemcpyAsync(bigrow_buf_d, recv_tempu, sizeof(double) * ncol_effective * nsupc, cudaMemcpyHostToDevice, stream);
+            }
+
+            // SSSSM update high_prio nsupers
+            {
+                int high_prio_nsupers = 1;
+
+                int_t ll_nblk = recv_metal[0];
+                int_t ll_lda = recv_metal[1];
+                int_t lu_nblk = recv_metau[0];
+                int_t lu_lda = SuperSize(level);
+                int_t lu_metaidx = 3;
+                int_t lu_blkidx = 0;
+                double *lvalueu = recv_tempu;
+
+                int_t uu_nblk = recv_metau[0];
+                int_t uu_lda = SuperSize(level);
+                int_t ul_nblk = recv_metal[0];
+                int_t ul_lda = recv_metal[1];
+                int_t ul_metaidx = 2;
+                int_t ul_blkidx = 0;
+                double *uvaluel = recv_templ;
+
+                timer_start(&tv_start1);
+                for (int_t bcr = level + 1; bcr < SUPERLU_MIN(nsupers, level + 1 + high_prio_nsupers); bcr++)
                 {
-                    int_t *metaa = Lrowind_bc_ptr[LBj(bcr, grid)];
-                    if (metaa)
+                    if ((bcr % LYD_PGRID_Q) == (iam % LYD_PGRID_Q))
                     {
-                        while (lu_metaidx < recv_metau[2] && recv_metau[lu_metaidx + 0] < bcr)
+                        int_t *metaa = Lrowind_bc_ptr[LBj(bcr, grid)];
+                        if (metaa)
                         {
-                            lvalueu += recv_metau[lu_metaidx + 1];
-                            lu_blkidx++;
-                            lu_metaidx += 2 + SuperSize(recv_metau[lu_metaidx + 0]);
-                        }
-                        if ((lu_metaidx < recv_metau[2]) && (recv_metau[lu_metaidx + 0] == bcr))
-                        {
-
-                            double *valuel = recv_templ;
-                            int_t l_metaidx = 2;
-                            int_t l_blkidx = 0;
-                            int_t l_lda = recv_metal[1];
-
-                            double *valuea = Lnzval_bc_ptr[LBj(bcr, grid)];
-                            int_t a_metaidx = 2;
-                            int_t a_blkidx = 0;
-                            int_t a_lda = metaa[1];
-                            int_t a_nblk = metaa[0];
-                            // int_t ncol_effective_local = get_ncol_effective(recv_metau+u_metaidx, level, xsup, SuperSize(recv_metau[u_metaidx+0]));
-                            int_t ncol_effective_local = recv_metau[lu_metaidx + 1] / nsupc;
-                            // printf("%d %d %d\n", recv_metau[lu_metaidx+1], nsupc, ncol_effective_local);
-
-                            while (a_blkidx < a_nblk && l_blkidx < ll_nblk)
+                            while (lu_metaidx < recv_metau[2] && recv_metau[lu_metaidx + 0] < bcr)
                             {
-                                if (metaa[a_metaidx + 0] < recv_metal[l_metaidx + 0])
-                                {
-                                    valuea += metaa[a_metaidx + 1];
-                                    a_blkidx++;
-                                    a_metaidx += (2 + metaa[a_metaidx + 1]);
-                                }
-                                else if (metaa[a_metaidx + 0] > recv_metal[l_metaidx + 0])
-                                {
-                                    valuel += recv_metal[l_metaidx + 1];
-                                    l_blkidx++;
-                                    l_metaidx += (2 + recv_metal[l_metaidx + 1]);
-                                }
-                                else
-                                {
-                                    timer_start(&tv_start3);
-                                    cblas_dgemm(
-                                        CblasColMajor, CblasNoTrans, CblasNoTrans,
-                                        recv_metal[l_metaidx + 1], ncol_effective_local, nsupc,
-                                        1.0, valuel, l_lda, lvalueu, nsupc, 0.0, ssssm_result, recv_metal[l_metaidx + 1]);
-                                    time_tstrf_update_kernel += timer_end(&tv_start3);
+                                lvalueu += recv_metau[lu_metaidx + 1];
+                                lu_blkidx++;
+                                lu_metaidx += 2 + SuperSize(recv_metau[lu_metaidx + 0]);
+                            }
+                            if ((lu_metaidx < recv_metau[2]) && (recv_metau[lu_metaidx + 0] == bcr))
+                            {
 
-                                    int_t fnz = FstBlockC(metaa[a_metaidx + 0]);
-                                    int_t dest_nbrow = metaa[a_metaidx + 1];
-                                    int_t l_nbrow = recv_metal[l_metaidx + 1];
-                                    int_t rel;
-                                    int_t perm_i;
+                                double *valuel = recv_templ;
+                                int_t l_metaidx = 2;
+                                int_t l_blkidx = 0;
+                                int_t l_lda = recv_metal[1];
 
-#pragma omp simd
-                                    for (perm_i = 0; perm_i < dest_nbrow; ++perm_i)
+                                double *valuea = Lnzval_bc_ptr[LBj(bcr, grid)];
+                                int_t a_metaidx = 2;
+                                int_t a_blkidx = 0;
+                                int_t a_lda = metaa[1];
+                                int_t a_nblk = metaa[0];
+                                // int_t ncol_effective_local = get_ncol_effective(recv_metau+u_metaidx, level, xsup, SuperSize(recv_metau[u_metaidx+0]));
+                                int_t ncol_effective_local = recv_metau[lu_metaidx + 1] / nsupc;
+                                // printf("%d %d %d\n", recv_metau[lu_metaidx+1], nsupc, ncol_effective_local);
+
+                                while (a_blkidx < a_nblk && l_blkidx < ll_nblk)
+                                {
+                                    if (metaa[a_metaidx + 0] < recv_metal[l_metaidx + 0])
                                     {
-                                        rel = metaa[a_metaidx + 2 + perm_i] - fnz;
-                                        indirect_l_1[rel] = perm_i;
+                                        valuea += metaa[a_metaidx + 1];
+                                        a_blkidx++;
+                                        a_metaidx += (2 + metaa[a_metaidx + 1]);
                                     }
-
-#pragma omp simd
-                                    for (perm_i = 0; perm_i < l_nbrow; ++perm_i)
-                                    { /* Source index is a subset of dest. */
-                                        int rel = recv_metal[l_metaidx + 2 + perm_i] - fnz;
-                                        indirect_l_2[perm_i] = indirect_l_1[rel];
-                                    }
-
-                                    int_t col = 0;
-                                    int_t klst = FstBlockC(level + 1);
-                                    int_t segsize;
-                                    double *ssssm_result_local = ssssm_result;
-                                    double *valuea_local = valuea;
-                                    for (int col = 0; col < SuperSize(recv_metau[lu_metaidx + 0]); col++)
+                                    else if (metaa[a_metaidx + 0] > recv_metal[l_metaidx + 0])
                                     {
-                                        segsize = klst - recv_metau[lu_metaidx + 2 + col];
-                                        if (segsize)
+                                        valuel += recv_metal[l_metaidx + 1];
+                                        l_blkidx++;
+                                        l_metaidx += (2 + recv_metal[l_metaidx + 1]);
+                                    }
+                                    else
+                                    {
+                                        timer_start(&tv_start3);
+                                        cblas_dgemm(
+                                            CblasColMajor, CblasNoTrans, CblasNoTrans,
+                                            recv_metal[l_metaidx + 1], ncol_effective_local, nsupc,
+                                            1.0, valuel, l_lda, lvalueu, nsupc, 0.0, ssssm_result, recv_metal[l_metaidx + 1]);
+                                        time_tstrf_update_kernel += timer_end(&tv_start3);
+
+                                        int_t fnz = FstBlockC(metaa[a_metaidx + 0]);
+                                        int_t dest_nbrow = metaa[a_metaidx + 1];
+                                        int_t l_nbrow = recv_metal[l_metaidx + 1];
+                                        int_t rel;
+                                        int_t perm_i;
+
+    #pragma omp simd
+                                        for (perm_i = 0; perm_i < dest_nbrow; ++perm_i)
                                         {
-#pragma omp simd
-                                            for (int rowidx = 0; rowidx < l_nbrow; rowidx++)
-                                            {
-#pragma omp atomic
-                                                valuea_local[indirect_l_2[rowidx]] -= ssssm_result_local[rowidx];
-                                            }
-                                            ssssm_result_local += l_nbrow;
+                                            rel = metaa[a_metaidx + 2 + perm_i] - fnz;
+                                            indirect_l_1[rel] = perm_i;
                                         }
-                                        valuea_local += a_lda;
+
+    #pragma omp simd
+                                        for (perm_i = 0; perm_i < l_nbrow; ++perm_i)
+                                        { /* Source index is a subset of dest. */
+                                            int rel = recv_metal[l_metaidx + 2 + perm_i] - fnz;
+                                            indirect_l_2[perm_i] = indirect_l_1[rel];
+                                        }
+
+                                        int_t col = 0;
+                                        int_t klst = FstBlockC(level + 1);
+                                        int_t segsize;
+                                        double *ssssm_result_local = ssssm_result;
+                                        double *valuea_local = valuea;
+                                        for (int col = 0; col < SuperSize(recv_metau[lu_metaidx + 0]); col++)
+                                        {
+                                            segsize = klst - recv_metau[lu_metaidx + 2 + col];
+                                            if (segsize)
+                                            {
+    #pragma omp simd
+                                                for (int rowidx = 0; rowidx < l_nbrow; rowidx++)
+                                                {
+    #pragma omp atomic
+                                                    valuea_local[indirect_l_2[rowidx]] -= ssssm_result_local[rowidx];
+                                                }
+                                                ssssm_result_local += l_nbrow;
+                                            }
+                                            valuea_local += a_lda;
+                                        }
+
+                                        valuel += recv_metal[l_metaidx + 1];
+                                        l_blkidx++;
+                                        l_metaidx += (2 + recv_metal[l_metaidx + 1]);
+
+                                        valuea += metaa[a_metaidx + 1];
+                                        a_blkidx++;
+                                        a_metaidx += (2 + metaa[a_metaidx + 1]);
                                     }
-
-                                    valuel += recv_metal[l_metaidx + 1];
-                                    l_blkidx++;
-                                    l_metaidx += (2 + recv_metal[l_metaidx + 1]);
-
-                                    valuea += metaa[a_metaidx + 1];
-                                    a_blkidx++;
-                                    a_metaidx += (2 + metaa[a_metaidx + 1]);
                                 }
                             }
                         }
                     }
-                }
 
-                if ((bcr % LYD_PGRID_P) == (iam / LYD_PGRID_Q))
-                {
-                    int_t *metaa = Ufstnz_br_ptr[LBi(bcr, grid)];
-                    if (metaa)
+                    if ((bcr % LYD_PGRID_P) == (iam / LYD_PGRID_Q))
                     {
-                        int_t l_meta_len = (2 + recv_metal[0] * 2 + recv_metal[1]);
-                        while ((ul_metaidx < l_meta_len) && (recv_metal[ul_metaidx + 0] < bcr))
+                        int_t *metaa = Ufstnz_br_ptr[LBi(bcr, grid)];
+                        if (metaa)
                         {
-                            ul_blkidx++;
-                            uvaluel += recv_metal[ul_metaidx + 1];
-                            ul_metaidx += 2 + recv_metal[ul_metaidx + 1];
-                        }
-                        if ((ul_metaidx < l_meta_len) && (recv_metal[ul_metaidx + 0] == bcr))
-                        {
-                            double *valuea = Unzval_br_ptr[LBi(bcr, grid)];
-                            int_t u_metaidx = 3;
-                            int_t u_blkidx = 0;
-                            double *valueu = recv_tempu;
-                            int_t a_metaidx = 3;
-                            int_t a_blkidx = 0;
-                            int_t a_nblk = metaa[0];
-                            int_t a_lda = SuperSize(bcr);
-                            int_t l_a_fstr = FstBlockC(recv_metal[ul_metaidx + 0]);
-                            int_t l_nrow = recv_metal[ul_metaidx + 1];
-
-                            // timer_start(&tv_start3);
-                            // memset(l_fullrow_buf, 0, sizeof(double) * a_lda * nsupc);
-                            // for (int_t l_col = 0; l_col < nsupc; l_col++)
-                            // {
-                            //     for(int_t rowidx = 0; rowidx < l_nrow; rowidx++){
-                            //         int l_row = recv_metal[ul_metaidx + 2 + rowidx] - l_a_fstr;
-                            //         l_fullrow_buf[l_col * a_lda + l_row] = uvaluel[l_col * ul_lda + rowidx];
-                            //     }
-                            // }
-                            // time_tmp1 += timer_end(&tv_start3);
-
-                            int_t a_fstbcol = metaa[3];
-                            int_t ncol_skip = 0;
-                            while ((u_blkidx < uu_nblk) && (recv_metau[u_metaidx + 0] < a_fstbcol))
+                            int_t l_meta_len = (2 + recv_metal[0] * 2 + recv_metal[1]);
+                            while ((ul_metaidx < l_meta_len) && (recv_metal[ul_metaidx + 0] < bcr))
                             {
-                                u_blkidx++;
-                                valueu += recv_metau[u_metaidx + 1];
-                                ncol_skip += (recv_metau[u_metaidx + 1] / nsupc);
-                                u_metaidx += (2 + SuperSize(recv_metau[u_metaidx + 0]));
+                                ul_blkidx++;
+                                uvaluel += recv_metal[ul_metaidx + 1];
+                                ul_metaidx += 2 + recv_metal[ul_metaidx + 1];
                             }
-
-                            int_t ncol_effective_brow = (recv_metau[1] / nsupc) - ncol_skip;
-                            if (ssssm_result_cap < l_nrow * ncol_effective_brow)
+                            if ((ul_metaidx < l_meta_len) && (recv_metal[ul_metaidx + 0] == bcr))
                             {
-                                ssssm_result_cap = l_nrow * ncol_effective_brow;
-                                free(ssssm_result);
-                                ssssm_result = malloc(sizeof(double) * ssssm_result_cap);
-                            }
-                            timer_start(&tv_start3);
-                            cblas_dgemm(
-                                CblasColMajor, CblasNoTrans, CblasNoTrans,
-                                l_nrow, ncol_effective_brow, nsupc,
-                                1.0, uvaluel, ul_lda, valueu, nsupc, 0.0, ssssm_result, l_nrow);
-                            time_gessm_update_kernel += timer_end(&tv_start3);
+                                double *valuea = Unzval_br_ptr[LBi(bcr, grid)];
+                                int_t u_metaidx = 3;
+                                int_t u_blkidx = 0;
+                                double *valueu = recv_tempu;
+                                int_t a_metaidx = 3;
+                                int_t a_blkidx = 0;
+                                int_t a_nblk = metaa[0];
+                                int_t a_lda = SuperSize(bcr);
+                                int_t l_a_fstr = FstBlockC(recv_metal[ul_metaidx + 0]);
+                                int_t l_nrow = recv_metal[ul_metaidx + 1];
 
-                            double *ssssm_result_ptr = ssssm_result;
+                                // timer_start(&tv_start3);
+                                // memset(l_fullrow_buf, 0, sizeof(double) * a_lda * nsupc);
+                                // for (int_t l_col = 0; l_col < nsupc; l_col++)
+                                // {
+                                //     for(int_t rowidx = 0; rowidx < l_nrow; rowidx++){
+                                //         int l_row = recv_metal[ul_metaidx + 2 + rowidx] - l_a_fstr;
+                                //         l_fullrow_buf[l_col * a_lda + l_row] = uvaluel[l_col * ul_lda + rowidx];
+                                //     }
+                                // }
+                                // time_tmp1 += timer_end(&tv_start3);
 
-                            for (int perm_i = 0; perm_i < l_nrow; ++perm_i)
-                            { /* Source index is a subset of dest. */
-                                int rel = recv_metal[ul_metaidx + 2 + perm_i] - l_a_fstr;
-                                indirect_l_2[perm_i] = rel;
-                            }
-
-                            while (a_blkidx < a_nblk && u_blkidx < uu_nblk)
-                            {
-                                while ((a_blkidx < a_nblk) && (metaa[a_metaidx + 0] < recv_metau[u_metaidx + 0]))
-                                {
-                                    a_blkidx++;
-                                    valuea += metaa[a_metaidx + 1];
-                                    a_metaidx += (2 + SuperSize(metaa[a_metaidx + 0]));
-                                }
-                                while ((u_blkidx < uu_nblk) && (metaa[a_metaidx + 0] > recv_metau[u_metaidx + 0]))
+                                int_t a_fstbcol = metaa[3];
+                                int_t ncol_skip = 0;
+                                while ((u_blkidx < uu_nblk) && (recv_metau[u_metaidx + 0] < a_fstbcol))
                                 {
                                     u_blkidx++;
-                                    ssssm_result_ptr += (recv_metau[u_metaidx + 1] / nsupc) * l_nrow;
+                                    valueu += recv_metau[u_metaidx + 1];
+                                    ncol_skip += (recv_metau[u_metaidx + 1] / nsupc);
                                     u_metaidx += (2 + SuperSize(recv_metau[u_metaidx + 0]));
                                 }
-                                if ((a_blkidx < a_nblk) && (u_blkidx < uu_nblk) && (metaa[a_metaidx + 0] == recv_metau[u_metaidx + 0]))
+
+                                int_t ncol_effective_brow = (recv_metau[1] / nsupc) - ncol_skip;
+                                if (ssssm_result_cap < l_nrow * ncol_effective_brow)
                                 {
-                                    timer_start(&tv_start3);
-                                    int_t segsize_a, segsize_u;
-                                    int_t a_fnz = FstBlockC(bcr + 1), u_fnz = FstBlockC(level + 1);
-                                    int_t ncol = SuperSize(recv_metau[u_metaidx + 0]);
-                                    double *a_tile_buffer_local = valuea;
-                                    double *ssssm_result_local = ssssm_result_ptr;
-                                    for (int_t col = 0; col < ncol; col++)
+                                    ssssm_result_cap = l_nrow * ncol_effective_brow;
+                                    free(ssssm_result);
+                                    ssssm_result = malloc(sizeof(double) * ssssm_result_cap);
+                                }
+                                timer_start(&tv_start3);
+                                cblas_dgemm(
+                                    CblasColMajor, CblasNoTrans, CblasNoTrans,
+                                    l_nrow, ncol_effective_brow, nsupc,
+                                    1.0, uvaluel, ul_lda, valueu, nsupc, 0.0, ssssm_result, l_nrow);
+                                time_gessm_update_kernel += timer_end(&tv_start3);
+
+                                double *ssssm_result_ptr = ssssm_result;
+
+                                for (int perm_i = 0; perm_i < l_nrow; ++perm_i)
+                                { /* Source index is a subset of dest. */
+                                    int rel = recv_metal[ul_metaidx + 2 + perm_i] - l_a_fstr;
+                                    indirect_l_2[perm_i] = rel;
+                                }
+
+                                while (a_blkidx < a_nblk && u_blkidx < uu_nblk)
+                                {
+                                    while ((a_blkidx < a_nblk) && (metaa[a_metaidx + 0] < recv_metau[u_metaidx + 0]))
                                     {
-                                        segsize_a = a_fnz - metaa[a_metaidx + 2 + col];
-                                        segsize_u = u_fnz - recv_metau[u_metaidx + 2 + col];
-                                        if (segsize_a)
+                                        a_blkidx++;
+                                        valuea += metaa[a_metaidx + 1];
+                                        a_metaidx += (2 + SuperSize(metaa[a_metaidx + 0]));
+                                    }
+                                    while ((u_blkidx < uu_nblk) && (metaa[a_metaidx + 0] > recv_metau[u_metaidx + 0]))
+                                    {
+                                        u_blkidx++;
+                                        ssssm_result_ptr += (recv_metau[u_metaidx + 1] / nsupc) * l_nrow;
+                                        u_metaidx += (2 + SuperSize(recv_metau[u_metaidx + 0]));
+                                    }
+                                    if ((a_blkidx < a_nblk) && (u_blkidx < uu_nblk) && (metaa[a_metaidx + 0] == recv_metau[u_metaidx + 0]))
+                                    {
+                                        timer_start(&tv_start3);
+                                        int_t segsize_a, segsize_u;
+                                        int_t a_fnz = FstBlockC(bcr + 1), u_fnz = FstBlockC(level + 1);
+                                        int_t ncol = SuperSize(recv_metau[u_metaidx + 0]);
+                                        double *a_tile_buffer_local = valuea;
+                                        double *ssssm_result_local = ssssm_result_ptr;
+                                        for (int_t col = 0; col < ncol; col++)
                                         {
-                                            if (segsize_u)
+                                            segsize_a = a_fnz - metaa[a_metaidx + 2 + col];
+                                            segsize_u = u_fnz - recv_metau[u_metaidx + 2 + col];
+                                            if (segsize_a)
                                             {
-// #pragma omp simd
-// for (int_t row = 0; row < a_lda; row++)
-// {
-//     a_tile_buffer_local[row] -= ssssm_result_local[row];
-// }
-#pragma omp simd
-                                                for (int_t rowidx = 0; rowidx < l_nrow; rowidx++)
+                                                if (segsize_u)
                                                 {
-// printf("rowidx=%d indirectl2=%d %p\n", rowidx, indirect_l_2[rowidx], a_tile_buffer_local + indirect_l_2[rowidx]);
-#pragma omp atomic
-                                                    a_tile_buffer_local[indirect_l_2[rowidx]] -= ssssm_result_local[rowidx];
+    // #pragma omp simd
+    // for (int_t row = 0; row < a_lda; row++)
+    // {
+    //     a_tile_buffer_local[row] -= ssssm_result_local[row];
+    // }
+    #pragma omp simd
+                                                    for (int_t rowidx = 0; rowidx < l_nrow; rowidx++)
+                                                    {
+    // printf("rowidx=%d indirectl2=%d %p\n", rowidx, indirect_l_2[rowidx], a_tile_buffer_local + indirect_l_2[rowidx]);
+    #pragma omp atomic
+                                                        a_tile_buffer_local[indirect_l_2[rowidx]] -= ssssm_result_local[rowidx];
+                                                    }
+                                                    ssssm_result_local += l_nrow;
                                                 }
+                                                a_tile_buffer_local += a_lda;
+                                            }
+                                            else if (segsize_u)
+                                            {
                                                 ssssm_result_local += l_nrow;
                                             }
-                                            a_tile_buffer_local += a_lda;
                                         }
-                                        else if (segsize_u)
-                                        {
-                                            ssssm_result_local += l_nrow;
-                                        }
+                                        time_tmp3 += timer_end(&tv_start3);
+
+                                        u_blkidx++;
+                                        ssssm_result_ptr += (recv_metau[u_metaidx + 1] / nsupc) * l_nrow;
+                                        u_metaidx += (2 + SuperSize(recv_metau[u_metaidx + 0]));
+
+                                        a_blkidx++;
+                                        valuea += metaa[a_metaidx + 1];
+                                        a_metaidx += (2 + SuperSize(metaa[a_metaidx + 0]));
                                     }
-                                    time_tmp3 += timer_end(&tv_start3);
-
-                                    u_blkidx++;
-                                    ssssm_result_ptr += (recv_metau[u_metaidx + 1] / nsupc) * l_nrow;
-                                    u_metaidx += (2 + SuperSize(recv_metau[u_metaidx + 0]));
-
-                                    a_blkidx++;
-                                    valuea += metaa[a_metaidx + 1];
-                                    a_metaidx += (2 + SuperSize(metaa[a_metaidx + 0]));
                                 }
                             }
                         }
                     }
                 }
+                time_tmp1 += timer_end(&tv_start1);
             }
-            time_tmp1 += timer_end(&tv_start1);
         }
 
-        
 
         // START THREADPOOL FUNC
         thread_param->level = level;
         thread_param->ncol_effective = ncol_effective;
         thread_param->nrow_effective = nrow_effective;
         thread_param->nsupc = nsupc;
+
+        if(pcol == level % LYD_PGRID_Q){ // L (local)
+            thread_param->l_tile_offset_d = Llu->l_tile_offset_hd[level];
+            thread_param->l_bcol_localperm_d = Llu->l_bcol_localperm_hd[level];
+            thread_param->l_brow_idx_d = Llu->l_brow_idx_hd[level];
+        }else if((level % 2) == 1){ // odd (remote)
+            thread_param->l_tile_offset_d = l_tile_offset_odd_d;
+            thread_param->l_bcol_localperm_d = l_bcol_localperm_odd_d;
+            thread_param->l_brow_idx_d = l_brow_idx_odd_d;
+        }else{
+            thread_param->l_tile_offset_d = l_tile_offset_even_d;
+            thread_param->l_bcol_localperm_d = l_bcol_localperm_even_d;
+            thread_param->l_brow_idx_d = l_brow_idx_even_d;
+        }
+
+        if(prow == level % LYD_PGRID_P){ // U (local)
+            thread_param->u_tile_offset_d = Llu->u_tile_offset_hd[level];
+            thread_param->u_brow_localperm_d = Llu->u_brow_localperm_hd[level];
+            thread_param->u_bcol_idx_d = Llu->u_bcol_idx_hd[level];
+        }else if((level % 2) == 1){ // odd (remote)
+            thread_param->u_tile_offset_d = u_tile_offset_odd_d;
+            thread_param->u_brow_localperm_d = u_brow_localperm_odd_d;
+            thread_param->u_bcol_idx_d = u_bcol_idx_odd_d;
+        }else{
+            thread_param->u_tile_offset_d = u_tile_offset_even_d;
+            thread_param->u_brow_localperm_d = u_brow_localperm_even_d;
+            thread_param->u_bcol_idx_d = u_bcol_idx_even_d;
+        }
         flying_virtual_tid = alloc_thread(trojan_horse_thread_pool, trojan_horse_batched_kernel, thread_param, 1);
 
         // cudaDeviceSynchronize();
@@ -1348,29 +1550,29 @@ int_t pdgstrf(
         // printf("------#%d level=%d done---------\n", iam, level);
     }
 
-    if (iam == 0)
-    {
-        printf("rank\tinit\tgetrf\tgetrfK\tgetrfS\tgetrfR\tgetrfU\tgetrfUK\ttstrf\ttstrfK\ttstrfS\ttstrfR\ttstrfU\ttstrfUK\tgessm\tgessmK\tgessmS\tgessmR\tgessmU\tgessmUK\tdivU\tdivL\n");
-        fflush(stdout);
-    }
-    for (int i = 0; i < nproc; i++)
-    {
-        if (iam == i)
-        {
-            printf("%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n",
-                   iam,
-                   time_init,
-                   time_getrf_all, time_getrf_kernel, time_getrf_send, time_getrf_recv, time_getrf_update, time_getrf_update_kernel,
-                   time_tstrf_all, time_tstrf_kernel, time_tstrf_send, time_tstrf_recv, time_tstrf_update, time_tstrf_update_kernel,
-                   time_gessm_all, time_gessm_kernel, time_gessm_send, time_gessm_recv, time_gessm_update, time_gessm_update_kernel,
-                   time_divide_u, time_divide_l);
-            printf("%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n",
-                   iam, time_tmp1, time_tmp2, time_tmp3, time_tmp4, time_tmp5, time_tmp6, time_tmp7);
-            fflush(stdout);
-        }
-        usleep(100);
-        MPI_Barrier(MPI_COMM_WORLD);
-    }
+    // if (iam == 0)
+    // {
+    //     printf("rank\tinit\tgetrf\tgetrfK\tgetrfS\tgetrfR\tgetrfU\tgetrfUK\ttstrf\ttstrfK\ttstrfS\ttstrfR\ttstrfU\ttstrfUK\tgessm\tgessmK\tgessmS\tgessmR\tgessmU\tgessmUK\tdivU\tdivL\n");
+    //     fflush(stdout);
+    // }
+    // for (int i = 0; i < nproc; i++)
+    // {
+    //     if (iam == i)
+    //     {
+    //         printf("%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n",
+    //                iam,
+    //                time_init,
+    //                time_getrf_all, time_getrf_kernel, time_getrf_send, time_getrf_recv, time_getrf_update, time_getrf_update_kernel,
+    //                time_tstrf_all, time_tstrf_kernel, time_tstrf_send, time_tstrf_recv, time_tstrf_update, time_tstrf_update_kernel,
+    //                time_gessm_all, time_gessm_kernel, time_gessm_send, time_gessm_recv, time_gessm_update, time_gessm_update_kernel,
+    //                time_divide_u, time_divide_l);
+    //         printf("%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n",
+    //                iam, time_tmp1, time_tmp2, time_tmp3, time_tmp4, time_tmp5, time_tmp6, time_tmp7);
+    //         fflush(stdout);
+    //     }
+    //     usleep(100);
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    // }
 
     stat->time_tstrf_update = time_tstrf_update;
 

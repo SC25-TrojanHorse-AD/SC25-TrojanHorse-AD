@@ -1800,6 +1800,18 @@ __global__ void th_expand_browidx_tagged(
 	}
 }
 
+__global__ void th_expand_browidx_tagged_v2(
+	int_t level,
+	int_t bcol_nblk,
+	unsigned long long* th_dense_browidx_d,
+	int_t* rowidx
+){
+	int tid = blockIdx.x * blockDim.x + threadIdx.x;
+	if(tid < bcol_nblk){
+		th_dense_browidx_d[rowidx[tid]] = ((unsigned long long)level << 32) + tid;
+	}
+}
+
 __device__ int_t
 get_level_of_block(
     int_t *blockmap,
@@ -1879,7 +1891,6 @@ __global__ void thkernel_grouped_batched_scatter_l(
 			int_t* indirect_a = l_bcol_localperm_dd[a_bcol]+a_tile_offset[block_index_in_a];
 			for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
 				if(indirect_l_inv[indirect_a[rowidx_a]] != -1){
-					// valuea_local[indirect_l_inv[indirect_a[rowidx_a]]] = ssssm_result_local[rowidx_a];
 					valuea_local[rowidx_a] -= ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
 				}
 			}
@@ -1948,8 +1959,6 @@ __global__ void thkernel_grouped_batched_scatter_u(
 			for(int colidx_a = 0; colidx_a < a_ncol; colidx_a++){
 				if(indirect_u_inv[indirect_a[colidx_a]] != -1){
 					valuea_local[colidx_a*nrow] -= ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective];
-					// ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective] = ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective];
-					// valuea_local[colidx_a*nrow] = valuea_local[colidx_a*nrow];
 				}
 			}
 		}
@@ -2024,7 +2033,6 @@ __global__ void thkernel_grouped_batched_scatter_u(
 // 				int_t* indirect_a = l_bcol_localperm_dd[a_bcol]+a_tile_offset[block_index_in_a];
 // 				for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
 // 					if(indirect_l_inv[indirect_a[rowidx_a]] != -1){
-// 						// valuea_local[indirect_l_inv[indirect_a[rowidx_a]]] = ssssm_result_local[rowidx_a];
 // 						valuea_local[rowidx_a] -= ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
 // 					}
 // 				}
@@ -2078,17 +2086,16 @@ __global__ void thkernel_grouped_batched_scatter_u(
 // 			__syncthreads();
 // 		}
 // 	}
-	
 // }
-
 
 __global__ void thkernel_grouped_batched_scatter(
 	int_t nsupers,
-	int_t nrow_effective, 
+	int_t nrow_effective,
 	int_t ncol_effective,
 	int_t nsupc,
-	int_t trsm_bcol,
+	int_t level,
 	int_t ncudablk_l,
+	int_t ncudablk_u,
 	double* bigresult_buf_d,
 	int_t* xsup,
 
@@ -2100,6 +2107,9 @@ __global__ void thkernel_grouped_batched_scatter(
 	int_t* l_nrow_prefixsum_d,
 	int_t* l_rowidx_d,
 	unsigned long long* th_dense_browidx_d,
+	int_t* l_brow_idx_d, // 1
+	int_t* l_bcol_localperm_d, // 2
+	int_t* l_tile_offset, // 3
 	
 	int_t* u_nblk_brow_prefixsum_d,
 	int_t** u_bcol_idx_dd,
@@ -2108,102 +2118,422 @@ __global__ void thkernel_grouped_batched_scatter(
 	double** u_brow_val_dd,
 	int_t* u_ncol_prefixsum_d,
 	int_t* u_colidx_d,
-	unsigned long long* th_dense_bcolidx_d
+	unsigned long long* th_dense_bcolidx_d,
+	int_t* u_bcol_idx_d,
+	int_t* u_brow_localperm_d,
+	int_t* u_tile_offset
 ){
-	if(blockIdx.x < ncudablk_l){
-		int_t u_bcol_idx = blockIdx.x;
-		int_t a_bcol = u_colidx_d[u_bcol_idx];
+	// if(blockIdx.x){
+	// 	return;
+	// }
 
-		__shared__ int indirect_l_inv[256];
+	// if(threadIdx.x==0){
+	// 	printf("(%lld): %lldx%lld\n", level, nrow_effective, ncol_effective);
+	// 	for(int i=0;i<nrow_effective;i++){
+	// 		for(int j=0;j<ncol_effective;j++){
+	// 			printf("%.2lf ", bigresult_buf_d[j*nrow_effective+i]);
+	// 		}
+	// 		printf("\n");
+	// 	}
+	// }
+	
 
-		int nblk_a = l_nblk_bcol_prefixsum_d[a_bcol+1] - l_nblk_bcol_prefixsum_d[a_bcol];
+	// for(int blkidx = 0; blkidx < ncudablk_l+ncudablk_u; blkidx++){
+		if(blockIdx.x < ncudablk_l){
+			int_t u_bcol_idx = blockIdx.x;
+			// int_t u_bcol_idx = blkidx;
+			int_t a_bcol = u_colidx_d[u_bcol_idx];
+	
+			__shared__ int indirect_l_inv[256];
+	
+			int nblk_a = l_nblk_bcol_prefixsum_d[a_bcol+1] - l_nblk_bcol_prefixsum_d[a_bcol];
+			int ncol = SuperSize(a_bcol);
+			for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
+				if((th_dense_browidx_d[l_brow_idx_dd[a_bcol][block_index_in_a]] >> 32) != level){
+					continue;
+				}
+				int_t block_index_in_l = th_dense_browidx_d[l_brow_idx_dd[a_bcol][block_index_in_a]] & 0xFFFFFFFF;
+	
+				int_t a_brow = l_brow_idx_dd[a_bcol][block_index_in_a];
+	
+				int_t* a_tile_offset = l_tile_offset_dd[a_bcol];
+				double* valuea = l_bcol_val_dd[a_bcol];
+				int l_nrow = l_tile_offset[block_index_in_l+1] - l_tile_offset[block_index_in_l];
+				int a_nrow = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
+	
+	
+				for(int i=threadIdx.x;i<256;i+=blockDim.x){
+					indirect_l_inv[i] = -1;
+				}
+				__syncthreads();
+	
+				for(int i=threadIdx.x;i<l_nrow;i+=blockDim.x){
+					indirect_l_inv[l_bcol_localperm_d[l_tile_offset[block_index_in_l] + i]] = i; // 2
+				}
+				__syncthreads();
+	
+				int u_ncol_effective = (u_ncol_prefixsum_d[u_bcol_idx+1] - u_ncol_prefixsum_d[u_bcol_idx]);
+	
+				
+				// if(!threadIdx.x){
+				// 	char msg[1000];
+				// 	msg[0] = 0;
+				// 	sprintf(msg+strlen(msg), "L (%lld, %lld)\n", a_brow, a_bcol);
+				// 	for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
+				// 		for(int col=0;col<u_ncol_effective;col++){
+				// 			double* valuea_local = valuea+col*a_tile_offset[nblk_a]+a_tile_offset[block_index_in_a];
+				// 			sprintf(msg+strlen(msg), "%.2lf ", valuea_local[rowidx_a]);
+				// 		}
+				// 		sprintf(msg+strlen(msg), "\n");
+				// 	}
+				// 	printf("%s", msg);
+				// }
+				// __syncthreads();
+	
+				for(int colidx = threadIdx.x; colidx < u_ncol_effective; colidx+=blockDim.x){
+				// if(!threadIdx.x)for(int colidx = 0; colidx < u_ncol_effective; colidx+=1){
+					int col = u_brow_localperm_d[u_tile_offset[u_bcol_idx]+colidx]; // 3 4
+					double* ssssm_result_local = bigresult_buf_d + (u_tile_offset[u_bcol_idx]+colidx) * nrow_effective + l_tile_offset[block_index_in_l];
+					double* valuea_local = valuea+col*a_tile_offset[nblk_a]+a_tile_offset[block_index_in_a];
+					int_t* indirect_a = l_bcol_localperm_dd[a_bcol]+a_tile_offset[block_index_in_a];
+					for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
+						if(indirect_l_inv[indirect_a[rowidx_a]] != -1){
+							valuea_local[rowidx_a] -= ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
+							// valuea_local[rowidx_a] = 1;
+						}
+					}
+				}
+				__syncthreads();
+
+				// if(!threadIdx.x){
+				// 	printf("L (%lld, %lld) %dx%d\n", a_brow, a_bcol, a_nrow, u_ncol_effective);
+				// 	for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
+				// 		for(int col=0;col<u_ncol_effective;col++){
+				// 			double* valuea_local = valuea+col*a_tile_offset[nblk_a]+a_tile_offset[block_index_in_a];
+				// 			printf("%.2lf ", valuea_local[rowidx_a]);
+				// 		}
+				// 		printf("\n");
+				// 	}
+				// }
+				// __syncthreads();
+			}
+		}else{
+			int_t l_brow_idx = blockIdx.x - ncudablk_l;
+			// int_t l_brow_idx = blkidx - ncudablk_l;
+			int_t a_brow = l_rowidx_d[l_brow_idx];
+	
+			__shared__ int indirect_u_inv[256];
+	
+			int nblk_a = u_nblk_brow_prefixsum_d[a_brow+1] - u_nblk_brow_prefixsum_d[a_brow];
+			int nrow = SuperSize(a_brow);
+			for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
+				if((th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] >> 32) != level){
+					continue;
+				}
+				int_t block_index_in_u = th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] & 0xFFFFFFFF;
+	
+				int_t a_bcol = u_bcol_idx_dd[a_brow][block_index_in_a];
+				// if(!threadIdx.x){
+				// 	printf("U (%lld, %lld)\n", a_brow, a_bcol);
+	
+				// }
+				
+				int_t* a_tile_offset = u_tile_offset_dd[a_brow];
+				double* valuea = u_brow_val_dd[a_brow];
+				int u_ncol = u_tile_offset[block_index_in_u+1] - u_tile_offset[block_index_in_u];
+				int a_ncol = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
+	
+				for(int i=threadIdx.x;i<256;i+=blockDim.x){
+					indirect_u_inv[i] = -1;
+				}
+				__syncthreads();
+	
+				for(int i=threadIdx.x;i<u_ncol;i+=blockDim.x){
+					indirect_u_inv[u_brow_localperm_d[u_tile_offset[block_index_in_u] + i]] = i;
+				}
+				__syncthreads();
+	
+				int l_nrow_effective = (l_nrow_prefixsum_d[l_brow_idx+1] - l_nrow_prefixsum_d[l_brow_idx]);
+				for(int rowidx = threadIdx.x; rowidx < l_nrow_effective; rowidx+=blockDim.x){
+				// if(!threadIdx.x)for(int rowidx = 0; rowidx < l_nrow_effective; rowidx+=1){
+					int row = l_bcol_localperm_d[l_tile_offset[l_brow_idx]+rowidx];
+					double* ssssm_result_local = bigresult_buf_d + (u_tile_offset[block_index_in_u]) * nrow_effective + l_tile_offset[l_brow_idx] + rowidx;
+					double* valuea_local = valuea+u_tile_offset_dd[a_brow][block_index_in_a]*nrow+row;
+					int_t* indirect_a = u_brow_localperm_dd[a_brow]+a_tile_offset[block_index_in_a];
+					for(int colidx_a = 0; colidx_a < a_ncol; colidx_a++){
+						if(indirect_u_inv[indirect_a[colidx_a]] != -1){
+							valuea_local[colidx_a*nrow] -= ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective];
+							// valuea_local[colidx_a*nrow] = 1;
+						}
+					}
+				}
+				__syncthreads();
+			}
+		}
+	// }
+	
+}
+
+
+void thkernel_grouped_batched_scatter_cpu(
+	int_t nsupers,
+	int_t nrow_effective,
+	int_t ncol_effective,
+	int_t nsupc,
+	int_t level,
+	int_t ncudablk_l,
+	double* bigresult_buf_h,
+	int_t* xsup,
+
+	int_t* l_nblk_bcol_prefixsum_h,
+	int_t** l_brow_idx_hh,
+	int_t** l_tile_offset_hh,
+	int_t** l_bcol_localperm_hh,
+	double** l_bcol_val_hh,
+	int_t* l_nrow_prefixsum_h,
+	int_t* l_rowidx_h,
+	unsigned long long* th_dense_browidx_h,
+	int_t* l_brow_idx_h, // 1
+	int_t* l_bcol_localperm_h, // 2
+	int_t* l_tile_offset, // 3
+	
+	int_t* u_nblk_brow_prefixsum_h,
+	int_t** u_bcol_idx_hh,
+	int_t** u_tile_offset_hh,
+	int_t** u_brow_localperm_hh,
+	double** u_brow_val_hh,
+	int_t* u_ncol_prefixsum_h,
+	int_t* u_colidx_h,
+	unsigned long long* th_dense_bcolidx_h,
+	int_t* u_bcol_idx_h,
+	int_t* u_brow_localperm_h,
+	int_t* u_tile_offset
+){
+	for(int blkidx = 0; blkidx < ncudablk_l; blkidx++){
+		int_t u_bcol_idx = blkidx;
+		int_t a_bcol = u_colidx_h[u_bcol_idx];
+
+		int indirect_l_inv[256];
+
+		int nblk_a = l_nblk_bcol_prefixsum_h[a_bcol+1] - l_nblk_bcol_prefixsum_h[a_bcol];
 		int ncol = SuperSize(a_bcol);
 		for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
-			if((th_dense_browidx_d[l_brow_idx_dd[a_bcol][block_index_in_a]] >> 32) != trsm_bcol){
+			if((th_dense_browidx_h[l_brow_idx_hh[a_bcol][block_index_in_a]] >> 32) != level){
 				continue;
 			}
-			int_t block_index_in_l = th_dense_browidx_d[l_brow_idx_dd[a_bcol][block_index_in_a]] & 0xFFFFFFFF;
+			int_t block_index_in_l = th_dense_browidx_h[l_brow_idx_hh[a_bcol][block_index_in_a]] & 0xFFFFFFFF;
 
-			int_t* l_tile_offset = l_tile_offset_dd[trsm_bcol];
-			int_t* a_tile_offset = l_tile_offset_dd[a_bcol];
-			double* valuea = l_bcol_val_dd[a_bcol];
+			int_t* a_tile_offset = l_tile_offset_hh[a_bcol];
+			double* valuea = l_bcol_val_hh[a_bcol];
 			int l_nrow = l_tile_offset[block_index_in_l+1] - l_tile_offset[block_index_in_l];
 			int a_nrow = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
 
-			for(int i=threadIdx.x;i<256;i+=blockDim.x){
+			for(int i=0;i<256;i++){
 				indirect_l_inv[i] = -1;
 			}
-			__syncthreads();
+			// __syncthreads();
 
-			for(int i=threadIdx.x;i<l_nrow;i+=blockDim.x){
-				indirect_l_inv[l_bcol_localperm_dd[trsm_bcol][l_tile_offset[block_index_in_l] + i]] = i;
+			for(int i=0;i<l_nrow;i++){
+				indirect_l_inv[l_bcol_localperm_h[l_tile_offset[block_index_in_l] + i]] = i; // 2
 			}
-			__syncthreads();
+			// __syncthreads();
 
-			int u_ncol_effective = (u_ncol_prefixsum_d[u_bcol_idx+1] - u_ncol_prefixsum_d[u_bcol_idx]);
-			for(int colidx = threadIdx.x; colidx < u_ncol_effective; colidx+=blockDim.x){
-				int col = u_brow_localperm_dd[trsm_bcol][u_tile_offset_dd[trsm_bcol][u_bcol_idx]+colidx];
-				double* ssssm_result_local = bigresult_buf_d + (u_tile_offset_dd[trsm_bcol][u_bcol_idx]+colidx) * nrow_effective + l_tile_offset[block_index_in_l];
+			int_t u_ncol_effective = (u_ncol_prefixsum_h[u_bcol_idx+1] - u_ncol_prefixsum_h[u_bcol_idx]);
+			for(int_t colidx = 0; colidx < u_ncol_effective; colidx++){
+				int_t col = u_brow_localperm_h[u_tile_offset[u_bcol_idx]+colidx]; // 3 4 // u_brow_localperm_d[336] overstep to double[]
+				double* ssssm_result_local = bigresult_buf_h + (u_tile_offset[u_bcol_idx]+colidx) * nrow_effective + l_tile_offset[block_index_in_l];
 				double* valuea_local = valuea+col*a_tile_offset[nblk_a]+a_tile_offset[block_index_in_a];
-				int_t* indirect_a = l_bcol_localperm_dd[a_bcol]+a_tile_offset[block_index_in_a];
+				int_t* indirect_a = l_bcol_localperm_hh[a_bcol]+a_tile_offset[block_index_in_a];
 				for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
-					if(indirect_l_inv[indirect_a[rowidx_a]] != -1){
-						// valuea_local[indirect_l_inv[indirect_a[rowidx_a]]] = ssssm_result_local[rowidx_a];
-						valuea_local[rowidx_a] -= ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
-					}
+					// if(indirect_l_inv[indirect_a[rowidx_a]] != -1){
+						// valuea_local[rowidx_a] -= ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
+						// ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]] = ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
+						valuea_local[rowidx_a] = 0;
+					// }
 				}
 			}
 
-			__syncthreads();
-		}
-	}else{
-		int_t l_brow_idx = blockIdx.x - ncudablk_l;
-		int_t a_brow = l_rowidx_d[l_brow_idx];
-
-		__shared__ int indirect_u_inv[256];
-
-		int nblk_a = u_nblk_brow_prefixsum_d[a_brow+1] - u_nblk_brow_prefixsum_d[a_brow];
-		int nrow = SuperSize(a_brow);
-		for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
-			if((th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] >> 32) != trsm_bcol){
-				continue;
-			}
-			int_t block_index_in_u = th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] & 0xFFFFFFFF;
-
-			int_t* l_tile_offset = l_tile_offset_dd[trsm_bcol]; // trsm_brow is equal to trsm_bcol
-			int_t* u_tile_offset = u_tile_offset_dd[trsm_bcol];
-			int_t* a_tile_offset = u_tile_offset_dd[a_brow];
-			double* valuea = u_brow_val_dd[a_brow];
-			int u_ncol = u_tile_offset[block_index_in_u+1] - u_tile_offset[block_index_in_u];
-			int a_ncol = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
-
-			for(int i=threadIdx.x;i<256;i+=blockDim.x){
-				indirect_u_inv[i] = -1;
-			}
-			__syncthreads();
-
-			for(int i=threadIdx.x;i<u_ncol;i+=blockDim.x){
-				indirect_u_inv[u_brow_localperm_dd[trsm_bcol][u_tile_offset[block_index_in_u] + i]] = i;
-			}
-			__syncthreads();
-
-			int l_nrow_effective = (l_nrow_prefixsum_d[l_brow_idx+1] - l_nrow_prefixsum_d[l_brow_idx]);
-			for(int rowidx = threadIdx.x; rowidx < l_nrow_effective; rowidx+=blockDim.x){
-				int row = l_bcol_localperm_dd[trsm_bcol][l_tile_offset_dd[trsm_bcol][l_brow_idx]+rowidx];
-				double* ssssm_result_local = bigresult_buf_d + (u_tile_offset[block_index_in_u]) * nrow_effective + l_tile_offset[l_brow_idx] + rowidx;
-				double* valuea_local = valuea+u_tile_offset_dd[a_brow][block_index_in_a]*nrow+row;
-				int_t* indirect_a = u_brow_localperm_dd[a_brow]+a_tile_offset[block_index_in_a];
-				for(int colidx_a = 0; colidx_a < a_ncol; colidx_a++){
-					if(indirect_u_inv[indirect_a[colidx_a]] != -1){
-						valuea_local[colidx_a*nrow] -= ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective];
-					}
-				}
-			}
-			__syncthreads();
+			// __syncthreads();
 		}
 	}
 	
+	// for(int blkidx = ncudablk_l; blkidx < griddim; blkidx++){
+	// 	// int_t l_brow_idx = blkidx - ncudablk_l;
+	// 	// int_t a_brow = l_rowidx_d[l_brow_idx];
+
+	// 	// __shared__ int indirect_u_inv[256];
+
+	// 	// int nblk_a = u_nblk_brow_prefixsum_d[a_brow+1] - u_nblk_brow_prefixsum_d[a_brow];
+	// 	// int nrow = SuperSize(a_brow);
+	// 	// for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
+	// 	// 	if((th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] >> 32) != level){
+	// 	// 		continue;
+	// 	// 	}
+	// 	// 	int_t block_index_in_u = th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] & 0xFFFFFFFF;
+
+	// 	// 	int_t* a_tile_offset = u_tile_offset_dd[a_brow];
+	// 	// 	double* valuea = u_brow_val_dd[a_brow];
+	// 	// 	int u_ncol = u_tile_offset[block_index_in_u+1] - u_tile_offset[block_index_in_u];
+	// 	// 	int a_ncol = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
+
+	// 	// 	for(int i=threadIdx.x;i<256;i+=blockDim.x){
+	// 	// 		indirect_u_inv[i] = -1;
+	// 	// 	}
+	// 	// 	__syncthreads();
+
+	// 	// 	for(int i=threadIdx.x;i<u_ncol;i+=blockDim.x){
+	// 	// 		indirect_u_inv[u_brow_localperm_d[u_tile_offset[block_index_in_u] + i]] = i;
+	// 	// 	}
+	// 	// 	__syncthreads();
+
+	// 	// 	int l_nrow_effective = (l_nrow_prefixsum_d[l_brow_idx+1] - l_nrow_prefixsum_d[l_brow_idx]);
+	// 	// 	for(int rowidx = threadIdx.x; rowidx < l_nrow_effective; rowidx+=blockDim.x){
+	// 	// 		int row = l_bcol_localperm_d[l_tile_offset[l_brow_idx]+rowidx];
+	// 	// 		double* ssssm_result_local = bigresult_buf_d + (u_tile_offset[block_index_in_u]) * nrow_effective + l_tile_offset[l_brow_idx] + rowidx;
+	// 	// 		double* valuea_local = valuea+u_tile_offset_dd[a_brow][block_index_in_a]*nrow+row;
+	// 	// 		int_t* indirect_a = u_brow_localperm_dd[a_brow]+a_tile_offset[block_index_in_a];
+	// 	// 		for(int colidx_a = 0; colidx_a < a_ncol; colidx_a++){
+	// 	// 			if(indirect_u_inv[indirect_a[colidx_a]] != -1){
+	// 	// 				valuea_local[colidx_a*nrow] -= ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective];
+	// 	// 			}
+	// 	// 		}
+	// 	// 	}
+	// 	// 	__syncthreads();
+	// 	// }
+	// }
 }
+
+// __global__ void thkernel_grouped_batched_scatter(
+// 	int_t nsupers,
+// 	int_t nrow_effective,
+// 	int_t ncol_effective,
+// 	int_t nsupc,
+// 	int_t level,
+// 	int_t ncudablk_l,
+// 	double* bigresult_buf_d,
+// 	int_t* xsup,
+
+// 	int_t* l_nblk_bcol_prefixsum_d,
+// 	int_t** l_brow_idx_dd,
+// 	int_t** l_tile_offset_dd,
+// 	int_t** l_bcol_localperm_dd,
+// 	double** l_bcol_val_dd,
+// 	int_t* l_nrow_prefixsum_d,
+// 	int_t* l_rowidx_d,
+// 	unsigned long long* th_dense_browidx_d,
+// 	int_t* l_brow_idx_d, // 1
+// 	int_t* l_bcol_localperm_d, // 2
+// 	int_t* l_tile_offset, // 3
+	
+// 	int_t* u_nblk_brow_prefixsum_d,
+// 	int_t** u_bcol_idx_dd,
+// 	int_t** u_tile_offset_dd,
+// 	int_t** u_brow_localperm_dd,
+// 	double** u_brow_val_dd,
+// 	int_t* u_ncol_prefixsum_d,
+// 	int_t* u_colidx_d,
+// 	unsigned long long* th_dense_bcolidx_d,
+// 	int_t* u_bcol_idx_d,
+// 	int_t* u_brow_localperm_d,
+// 	int_t* u_tile_offset
+// ){
+// 	if(blockIdx.x != 0) return;
+// 	if(threadIdx.x != 0) return;
+// 	int griddim = gridDim.x;
+
+// 	for(int blkidx = 0; blkidx < ncudablk_l; blkidx++){
+// 		int_t u_bcol_idx = blkidx;
+// 		int_t a_bcol = u_colidx_d[u_bcol_idx];
+
+// 		__shared__ int indirect_l_inv[256];
+
+// 		int nblk_a = l_nblk_bcol_prefixsum_d[a_bcol+1] - l_nblk_bcol_prefixsum_d[a_bcol];
+// 		int ncol = SuperSize(a_bcol);
+// 		for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
+// 			if((th_dense_browidx_d[l_brow_idx_dd[a_bcol][block_index_in_a]] >> 32) != level){
+// 				continue;
+// 			}
+// 			int_t block_index_in_l = th_dense_browidx_d[l_brow_idx_dd[a_bcol][block_index_in_a]] & 0xFFFFFFFF;
+
+// 			int_t* a_tile_offset = l_tile_offset_dd[a_bcol];
+// 			double* valuea = l_bcol_val_dd[a_bcol];
+// 			int l_nrow = l_tile_offset[block_index_in_l+1] - l_tile_offset[block_index_in_l];
+// 			int a_nrow = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
+
+// 			for(int i=0;i<256;i++){
+// 				indirect_l_inv[i] = -1;
+// 			}
+// 			__syncthreads();
+
+// 			for(int i=0;i<l_nrow;i++){
+// 				indirect_l_inv[l_bcol_localperm_d[l_tile_offset[block_index_in_l] + i]] = i; // 2
+// 			}
+// 			__syncthreads();
+
+// 			int u_ncol_effective = (u_ncol_prefixsum_d[u_bcol_idx+1] - u_ncol_prefixsum_d[u_bcol_idx]);
+// 			for(int colidx = 0; colidx < u_ncol_effective; colidx++){
+// 				int col = u_brow_localperm_d[u_tile_offset[u_bcol_idx]+colidx]; // 3 4 // u_brow_localperm_d[336] overstep to double[]
+// 				double* ssssm_result_local = bigresult_buf_d + (u_tile_offset[u_bcol_idx]+colidx) * nrow_effective + l_tile_offset[block_index_in_l];
+// 				double* valuea_local = valuea+col*a_tile_offset[nblk_a]+a_tile_offset[block_index_in_a];
+// 				int_t* indirect_a = l_bcol_localperm_dd[a_bcol]+a_tile_offset[block_index_in_a];
+// 				for(int rowidx_a = 0; rowidx_a < a_nrow; rowidx_a++){
+// 					if(indirect_l_inv[indirect_a[rowidx_a]] != -1){
+// 						valuea_local[rowidx_a] -= ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
+// 						// ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]] = ssssm_result_local[indirect_l_inv[indirect_a[rowidx_a]]];
+// 						// valuea_local[rowidx_a] = valuea_local[rowidx_a];
+// 					}
+// 				}
+// 			}
+
+// 			__syncthreads();
+// 		}
+// 	}
+	
+// 	for(int blkidx = ncudablk_l; blkidx < griddim; blkidx++){
+// 		int_t l_brow_idx = blkidx - ncudablk_l;
+// 		int_t a_brow = l_rowidx_d[l_brow_idx];
+
+// 		__shared__ int indirect_u_inv[256];
+
+// 		int nblk_a = u_nblk_brow_prefixsum_d[a_brow+1] - u_nblk_brow_prefixsum_d[a_brow];
+// 		int nrow = SuperSize(a_brow);
+// 		for(int block_index_in_a = 0; block_index_in_a < nblk_a; block_index_in_a++){
+// 			if((th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] >> 32) != level){
+// 				continue;
+// 			}
+// 			int_t block_index_in_u = th_dense_bcolidx_d[u_bcol_idx_dd[a_brow][block_index_in_a]] & 0xFFFFFFFF;
+
+// 			int_t* a_tile_offset = u_tile_offset_dd[a_brow];
+// 			double* valuea = u_brow_val_dd[a_brow];
+// 			int u_ncol = u_tile_offset[block_index_in_u+1] - u_tile_offset[block_index_in_u];
+// 			int a_ncol = a_tile_offset[block_index_in_a+1] - a_tile_offset[block_index_in_a];
+
+// 			for(int i=threadIdx.x;i<256;i+=blockDim.x){
+// 				indirect_u_inv[i] = -1;
+// 			}
+// 			__syncthreads();
+
+// 			for(int i=threadIdx.x;i<u_ncol;i+=blockDim.x){
+// 				indirect_u_inv[u_brow_localperm_d[u_tile_offset[block_index_in_u] + i]] = i;
+// 			}
+// 			__syncthreads();
+
+// 			int l_nrow_effective = (l_nrow_prefixsum_d[l_brow_idx+1] - l_nrow_prefixsum_d[l_brow_idx]);
+// 			for(int rowidx = threadIdx.x; rowidx < l_nrow_effective; rowidx+=blockDim.x){
+// 				int row = l_bcol_localperm_d[l_tile_offset[l_brow_idx]+rowidx];
+// 				double* ssssm_result_local = bigresult_buf_d + (u_tile_offset[block_index_in_u]) * nrow_effective + l_tile_offset[l_brow_idx] + rowidx;
+// 				double* valuea_local = valuea+u_tile_offset_dd[a_brow][block_index_in_a]*nrow+row;
+// 				int_t* indirect_a = u_brow_localperm_dd[a_brow]+a_tile_offset[block_index_in_a];
+// 				for(int colidx_a = 0; colidx_a < a_ncol; colidx_a++){
+// 					if(indirect_u_inv[indirect_a[colidx_a]] != -1){
+// 						valuea_local[colidx_a*nrow] -= ssssm_result_local[indirect_u_inv[indirect_a[colidx_a]]*nrow_effective];
+// 					}
+// 				}
+// 			}
+// 			__syncthreads();
+// 		}
+// 	}
+// }
 
 extern "C"{	
 
@@ -2388,166 +2718,17 @@ extern "C"{
 		}
 	}
 
-	// void trojan_horse_grouped_batched_scatter(
-	// 	int_t nsupers,
-	// 	int_t nrow_effective, 
-	// 	int_t ncol_effective,
-	// 	int_t nsupc,
-	// 	int_t trsm_bcol,
-	// 	double* bigresult_buf_d,
-	// 	int_t* xsup_d,
-	// 	int_t* xsup,
-
-	// 	int_t* l_nblk_bcol_prefixsum_h,
-	// 	int_t** l_brow_idx_hh,
-	// 	int_t** l_tile_offset_hh,
-	// 	int_t** l_bcol_localperm_hh,
-	// 	int_t* l_nblk_bcol_prefixsum_d,
-	// 	int_t** l_brow_idx_dd,
-	// 	int_t** l_tile_offset_dd,
-	// 	int_t** l_bcol_localperm_dd,
-	// 	double** l_bcol_val_dd,
-	// 	int_t* metal_h,
-	// 	int_t* metal_d,
-	// 	double* valuel_d,
-
-	// 	int_t* u_nblk_brow_prefixsum_h,
-	// 	int_t** u_bcol_idx_hh,
-	// 	int_t** u_tile_offset_hh,
-	// 	int_t** u_brow_localperm_hh,
-	// 	int_t* u_nblk_brow_prefixsum_d,
-	// 	int_t** u_bcol_idx_dd,
-	// 	int_t** u_tile_offset_dd,
-	// 	int_t** u_brow_localperm_dd,
-	// 	double** u_brow_val_dd,
-	// 	int_t* metau_h,
-	// 	int_t* metau_d,
-	// 	double* valueu_d
-	// ){
-	// 	// int_t set_len = nsupers - trsm_bcol;
-	// 	int_t bcol_nblk = l_nblk_bcol_prefixsum_h[trsm_bcol+1] - l_nblk_bcol_prefixsum_h[trsm_bcol];
-	// 	if(bcol_nblk > 0){
-	// 		th_expand_browidx_tagged<<<CEILING(bcol_nblk, 128), 128>>>(
-	// 			trsm_bcol, bcol_nblk, th_dense_browidx_d, l_brow_idx_dd
-	// 		);
-	// 	}
-
-    //     int_t u_nblk = metau_h[0];
-    //     int_t u_lda = SuperSize(trsm_bcol);
-    //     int_t u_metaidx = 3;
-    //     int_t u_blkidx = 0;
-
-	// 	u_ncol_prefixsum_h = u_colidx_h+u_nblk;
-	// 	u_ncol_prefixsum_d = u_colidx_d+u_nblk;
-		
-	// 	int_t u_col = 0;
-	// 	u_ncol_prefixsum_h[0] = 0;
-	// 	while (u_blkidx < u_nblk)
-	// 	{
-	// 		u_colidx_h[u_blkidx] = metau_h[u_metaidx + 0];
-	// 		u_col += (metau_h[u_metaidx + 1] / nsupc);
-	// 	    u_blkidx++;
-	// 	    u_metaidx += 2 + SuperSize(metau_h[u_metaidx + 0]);
-	// 		u_ncol_prefixsum_h[u_blkidx] = u_col;
-	// 	}
-
-	// 	if(u_nblk > 0){
-	// 		// printf("u_nblk = %d\n", u_nblk);
-	// 		cudaMemcpy(u_colidx_d, u_colidx_h, sizeof(int_t)*(2*u_nblk+1), cudaMemcpyHostToDevice);
-	// 		cudaDeviceSynchronize();
-	// 		thkernel_grouped_batched_scatter_l<<<u_nblk, 128>>>(
-	// 			nsupers,
-	// 			nrow_effective,
-	// 			ncol_effective,
-	// 			nsupc,
-	// 			trsm_bcol,
-	// 			bigresult_buf_d,
-	// 			l_nblk_bcol_prefixsum_d,
-	// 			l_brow_idx_dd,
-	// 			l_tile_offset_dd,
-	// 			l_bcol_localperm_dd,
-	// 			l_bcol_val_dd,
-	// 			th_dense_browidx_d,
-	// 			xsup_d,
-	// 			u_ncol_prefixsum_d,
-	// 			u_colidx_d,
-	// 			u_tile_offset_dd,
-	// 			u_brow_localperm_dd
-	// 		);
-	// 	}
-		
-	// 	int errid = 0;
-	// 	if((errid = cudaDeviceSynchronize()) != cudaSuccess){
-	// 		printf("cuda error %d\n", errid);
-	// 		exit(1);
-	// 	}
-
-	// 	int_t brow_nblk = u_nblk_brow_prefixsum_h[trsm_bcol+1] - u_nblk_brow_prefixsum_h[trsm_bcol];
-	// 	if(brow_nblk > 0){
-	// 		th_expand_browidx_tagged<<<CEILING(brow_nblk, 128), 128>>>(
-	// 			trsm_bcol, brow_nblk, th_dense_browidx_d, u_bcol_idx_dd
-	// 		);
-	// 	}
-
-    //     int_t l_nblk = metal_h[0];
-    //     int_t l_lda = SuperSize(trsm_bcol);
-    //     int_t l_metaidx = 2;
-    //     int_t l_blkidx = 0;
-
-	// 	l_nrow_prefixsum_h = l_rowidx_h+l_nblk;
-	// 	l_nrow_prefixsum_d = l_rowidx_d+l_nblk;
-		
-	// 	int_t l_row = 0;
-	// 	l_nrow_prefixsum_h[0] = 0;
-	// 	while (l_blkidx < l_nblk)
-	// 	{
-	// 		l_rowidx_h[l_blkidx] = metal_h[l_metaidx + 0];
-	// 		l_row += metal_h[l_metaidx + 1];
-	// 	    l_blkidx++;
-	// 	    l_metaidx += 2 + metal_h[l_metaidx + 1];
-	// 		l_nrow_prefixsum_h[l_blkidx] = l_row;
-	// 	}
-
-	// 	if(l_nblk > 0){
-	// 		cudaMemcpy(l_rowidx_d, l_rowidx_h, sizeof(int_t)*(2*l_nblk+1), cudaMemcpyHostToDevice);
-	// 		cudaDeviceSynchronize();
-	// 		thkernel_grouped_batched_scatter_u<<<l_nblk, 128>>>(
-	// 			nsupers,
-	// 			nrow_effective,
-	// 			ncol_effective,
-	// 			nsupc,
-	// 			trsm_bcol,
-	// 			bigresult_buf_d,
-	// 			u_nblk_brow_prefixsum_d,
-	// 			u_bcol_idx_dd,
-	// 			u_tile_offset_dd,
-	// 			u_brow_localperm_dd,
-	// 			u_brow_val_dd,
-	// 			th_dense_browidx_d,
-	// 			xsup_d,
-	// 			l_nrow_prefixsum_d,
-	// 			l_rowidx_d,
-	// 			l_tile_offset_dd,
-	// 			l_bcol_localperm_dd
-	// 		);
-	// 	}
-		
-	// 	if((errid = cudaDeviceSynchronize()) != cudaSuccess){
-	// 		printf("cuda error %d\n", errid);
-	// 		exit(1);
-	// 	}
-	// }
-
 	void trojan_horse_grouped_batched_scatter(
 		int_t nsupers,
 		int_t nrow_effective, 
 		int_t ncol_effective,
 		int_t nsupc,
-		int_t trsm_bcol,
+		int_t level,
 		double* bigresult_buf_d,
 		int_t* xsup_d,
 		int_t* xsup,
 
+		int_t bcol_nblk, // 0
 		int_t* l_nblk_bcol_prefixsum_h,
 		int_t** l_brow_idx_hh,
 		int_t** l_tile_offset_hh,
@@ -2558,9 +2739,11 @@ extern "C"{
 		int_t** l_bcol_localperm_dd,
 		double** l_bcol_val_dd,
 		int_t* metal_h,
-		int_t* metal_d,
-		double* valuel_d,
+		int_t* l_brow_idx_d, // 1
+		int_t* l_bcol_localperm_d, // 2
+		int_t* l_tile_offset_d, // 3
 
+		int_t brow_nblk,
 		int_t* u_nblk_brow_prefixsum_h,
 		int_t** u_bcol_idx_hh,
 		int_t** u_tile_offset_hh,
@@ -2571,31 +2754,34 @@ extern "C"{
 		int_t** u_brow_localperm_dd,
 		double** u_brow_val_dd,
 		int_t* metau_h,
-		int_t* metau_d,
-		double* valueu_d
+		int_t* u_bcol_idx_d,
+		int_t* u_brow_localperm_d,
+		int_t* u_tile_offset_d
 	){
-		// int_t set_len = nsupers - trsm_bcol;
-		int_t bcol_nblk = l_nblk_bcol_prefixsum_h[trsm_bcol+1] - l_nblk_bcol_prefixsum_h[trsm_bcol];
-		if(bcol_nblk > 0){
-			th_expand_browidx_tagged<<<CEILING(bcol_nblk, 256), 256>>>(
-				trsm_bcol, bcol_nblk, th_dense_browidx_d, l_brow_idx_dd
-			);
-		}
+		int errid = 0;
 
-		int_t brow_nblk = u_nblk_brow_prefixsum_h[trsm_bcol+1] - u_nblk_brow_prefixsum_h[trsm_bcol];
-		if(brow_nblk > 0){
-			th_expand_browidx_tagged<<<CEILING(brow_nblk, 256), 256>>>(
-				trsm_bcol, brow_nblk, th_dense_browidx_d+nsupers, u_bcol_idx_dd
-			);
+		if((errid = cudaDeviceSynchronize()) != cudaSuccess){
+			printf("cuda error S-1 %d\n", errid);
+			exit(1);
 		}
 
         int_t u_nblk = metau_h[0];
-        int_t u_lda = SuperSize(trsm_bcol);
+        int_t u_lda = SuperSize(level);
         int_t u_metaidx = 3;
         int_t u_blkidx = 0;
 
+		int_t l_nblk = metal_h[0];
+        int_t l_lda = SuperSize(level);
+        int_t l_metaidx = 2;
+        int_t l_blkidx = 0;
+
 		u_ncol_prefixsum_h = u_colidx_h+u_nblk;
+		l_rowidx_h = u_ncol_prefixsum_h+(u_nblk+1);
+		l_nrow_prefixsum_h = l_rowidx_h+l_nblk;
+
 		u_ncol_prefixsum_d = u_colidx_d+u_nblk;
+		l_rowidx_d = u_ncol_prefixsum_d+(u_nblk+1);
+		l_nrow_prefixsum_d = l_rowidx_d+l_nblk;
 		
 		int_t u_col = 0;
 		u_ncol_prefixsum_h[0] = 0;
@@ -2608,38 +2794,35 @@ extern "C"{
 			u_ncol_prefixsum_h[u_blkidx] = u_col;
 		}
 
-
-		int_t l_nblk = metal_h[0];
-        int_t l_lda = SuperSize(trsm_bcol);
-        int_t l_metaidx = 2;
-        int_t l_blkidx = 0;
-
-		l_rowidx_h = u_ncol_prefixsum_h+(u_nblk+1);
-		l_nrow_prefixsum_h = l_rowidx_h+l_nblk;
-		l_rowidx_d = u_ncol_prefixsum_d+(u_nblk+1);
-		l_nrow_prefixsum_d = l_rowidx_d+l_nblk;
-		
 		int_t l_row = 0;
 		l_nrow_prefixsum_h[0] = 0;
 		while (l_blkidx < l_nblk)
 		{
-			l_rowidx_h[l_blkidx] = metal_h[l_metaidx + 0];
+			l_rowidx_h[l_blkidx] = metal_h[l_metaidx + 0]; // the row index of each block of blk-vec L. Not need receiving.
 			l_row += metal_h[l_metaidx + 1];
 		    l_blkidx++;
 		    l_metaidx += 2 + metal_h[l_metaidx + 1];
 			l_nrow_prefixsum_h[l_blkidx] = l_row;
 		}
 
-		// if(u_nblk > 0){
-		// 	cudaMemcpy(u_colidx_d, u_colidx_h, sizeof(int_t)*(2*u_nblk+1), cudaMemcpyHostToDevice);
-		// }
-		// if(l_nblk > 0){
-		// 	cudaMemcpy(l_rowidx_d, l_rowidx_h, sizeof(int_t)*(2*l_nblk+1), cudaMemcpyHostToDevice);
-		// }
-
 		cudaMemcpy(u_colidx_d, u_colidx_h, sizeof(int_t)*((2*u_nblk+1)+(2*l_nblk+1)), cudaMemcpyHostToDevice);
 
-		// cudaDeviceSynchronize();
+		// int_t bcol_nblk = l_nblk_bcol_prefixsum_h[level+1] - l_nblk_bcol_prefixsum_h[level];
+		if(bcol_nblk > 0){
+			// th_expand_browidx_tagged<<<CEILING(bcol_nblk, 256), 256>>>(
+			// 	level, bcol_nblk, th_dense_browidx_d, l_brow_idx_dd
+			// );
+			th_expand_browidx_tagged_v2<<<CEILING(bcol_nblk, 256), 256>>>(
+				level, bcol_nblk, th_dense_browidx_d, l_rowidx_d
+			);
+		}
+
+		// int_t brow_nblk = u_nblk_brow_prefixsum_h[level+1] - u_nblk_brow_prefixsum_h[level];
+		if(brow_nblk > 0){
+			th_expand_browidx_tagged_v2<<<CEILING(brow_nblk, 256), 256>>>(
+				level, brow_nblk, th_dense_browidx_d+nsupers, u_colidx_d
+			);
+		}
 
 		if(u_nblk > 0 || l_nblk > 0){
 			thkernel_grouped_batched_scatter<<<u_nblk + l_nblk, 256>>>(
@@ -2647,8 +2830,9 @@ extern "C"{
 				nrow_effective,
 				ncol_effective,
 				nsupc,
-				trsm_bcol,
+				level,
 				u_nblk,
+				l_nblk,
 				bigresult_buf_d,
 				xsup_d,
 
@@ -2660,6 +2844,9 @@ extern "C"{
 				l_nrow_prefixsum_d,
 				l_rowidx_d,
 				th_dense_browidx_d,
+				l_rowidx_d, // 1?
+				l_bcol_localperm_d, // 2
+				l_tile_offset_d, // 3
 
 				u_nblk_brow_prefixsum_d,
 				u_bcol_idx_dd,
@@ -2668,16 +2855,172 @@ extern "C"{
 				u_brow_val_dd,
 				u_ncol_prefixsum_d,
 				u_colidx_d,
-				th_dense_browidx_d+nsupers
+				th_dense_browidx_d+nsupers,
+				u_colidx_d, // 1?
+				u_brow_localperm_d, // 2
+				u_tile_offset_d // 3
 			);
 		}
 		
-		int errid = 0;
 		if((errid = cudaDeviceSynchronize()) != cudaSuccess){
-			printf("cuda error %d\n", errid);
+			printf("cuda error S-2 %d\n", errid);
 			exit(1);
 		}
 	}
+
+	// void trojan_horse_grouped_batched_scatter_cpu(
+	// 	int_t nsupers,
+	// 	int_t nrow_effective, 
+	// 	int_t ncol_effective,
+	// 	int_t nsupc,
+	// 	int_t level,
+	// 	double* bigresult_buf_d,
+	// 	int_t* xsup_d,
+	// 	int_t* xsup,
+
+	// 	int_t bcol_nblk, // 0
+	// 	int_t* l_nblk_bcol_prefixsum_h,
+	// 	int_t** l_brow_idx_hh,
+	// 	int_t** l_tile_offset_hh,
+	// 	int_t** l_bcol_localperm_hh,
+	// 	int_t* l_nblk_bcol_prefixsum_d,
+	// 	int_t** l_brow_idx_dd,
+	// 	int_t** l_tile_offset_dd,
+	// 	int_t** l_bcol_localperm_dd,
+	// 	double** l_bcol_val_hh,
+	// 	int_t* metal_h,
+	// 	int_t* l_brow_idx_h, // 1
+	// 	int_t* l_bcol_localperm_h, // 2
+	// 	int_t* l_tile_offset_h, // 3
+
+	// 	int_t brow_nblk,
+	// 	int_t* u_nblk_brow_prefixsum_h,
+	// 	int_t** u_bcol_idx_hh,
+	// 	int_t** u_tile_offset_hh,
+	// 	int_t** u_brow_localperm_hh,
+	// 	int_t* u_nblk_brow_prefixsum_d,
+	// 	int_t** u_bcol_idx_dd,
+	// 	int_t** u_tile_offset_dd,
+	// 	int_t** u_brow_localperm_dd,
+	// 	double** u_brow_val_hh,
+	// 	int_t* metau_h,
+	// 	int_t* u_bcol_idx_h,
+	// 	int_t* u_brow_localperm_h,
+	// 	int_t* u_tile_offset_h
+	// ){
+	// 	int errid = 0;
+
+	// 	if((errid = cudaDeviceSynchronize()) != cudaSuccess){
+	// 		printf("cuda error S-1 %d\n", errid);
+	// 		exit(1);
+	// 	}
+
+    //     int_t u_nblk = metau_h[0];
+    //     int_t u_lda = SuperSize(level);
+    //     int_t u_metaidx = 3;
+    //     int_t u_blkidx = 0;
+
+	// 	int_t l_nblk = metal_h[0];
+    //     int_t l_lda = SuperSize(level);
+    //     int_t l_metaidx = 2;
+    //     int_t l_blkidx = 0;
+
+	// 	u_ncol_prefixsum_h = u_colidx_h+u_nblk;
+	// 	l_rowidx_h = u_ncol_prefixsum_h+(u_nblk+1);
+	// 	l_nrow_prefixsum_h = l_rowidx_h+l_nblk;
+
+	// 	u_ncol_prefixsum_d = u_colidx_d+u_nblk;
+	// 	l_rowidx_d = u_ncol_prefixsum_d+(u_nblk+1);
+	// 	l_nrow_prefixsum_d = l_rowidx_d+l_nblk;
+		
+	// 	int_t u_col = 0;
+	// 	u_ncol_prefixsum_h[0] = 0;
+	// 	while (u_blkidx < u_nblk)
+	// 	{
+	// 		u_colidx_h[u_blkidx] = metau_h[u_metaidx + 0];
+	// 		u_col += (metau_h[u_metaidx + 1] / nsupc);
+	// 	    u_blkidx++;
+	// 	    u_metaidx += 2 + SuperSize(metau_h[u_metaidx + 0]);
+	// 		u_ncol_prefixsum_h[u_blkidx] = u_col;
+	// 	}
+
+	// 	int_t l_row = 0;
+	// 	l_nrow_prefixsum_h[0] = 0;
+	// 	while (l_blkidx < l_nblk)
+	// 	{
+	// 		l_rowidx_h[l_blkidx] = metal_h[l_metaidx + 0]; // the row index of each block of blk-vec L. Not need receiving.
+	// 		l_row += metal_h[l_metaidx + 1];
+	// 	    l_blkidx++;
+	// 	    l_metaidx += 2 + metal_h[l_metaidx + 1];
+	// 		l_nrow_prefixsum_h[l_blkidx] = l_row;
+	// 	}
+
+	// 	cudaMemcpy(u_colidx_d, u_colidx_h, sizeof(int_t)*((2*u_nblk+1)+(2*l_nblk+1)), cudaMemcpyHostToDevice);
+
+
+	// 	unsigned long long th_dense_browidx_h[nsupers*2];		
+
+	// 	// int_t bcol_nblk = l_nblk_bcol_prefixsum_h[level+1] - l_nblk_bcol_prefixsum_h[level];
+	// 	if(bcol_nblk > 0){
+	// 		th_expand_browidx_tagged_v2<<<CEILING(bcol_nblk, 256), 256>>>(
+	// 			level, bcol_nblk, th_dense_browidx_d, l_rowidx_d
+	// 		);
+	// 	}
+
+	// 	// int_t brow_nblk = u_nblk_brow_prefixsum_h[level+1] - u_nblk_brow_prefixsum_h[level];
+	// 	if(brow_nblk > 0){
+	// 		th_expand_browidx_tagged_v2<<<CEILING(brow_nblk, 256), 256>>>(
+	// 			level, brow_nblk, th_dense_browidx_d+nsupers, u_colidx_d
+	// 		);
+	// 	}
+
+	// 	cudaMemcpy(th_dense_browidx_h, th_dense_browidx_d, sizeof(unsigned long long)*2*nsupers, cudaMemcpyDeviceToHost);
+
+	// 	if(u_nblk > 0 || l_nblk > 0){
+
+	// 		double bigresult_buf_h[nrow_effective*ncol_effective];
+
+	// 		thkernel_grouped_batched_scatter_cpu(
+	// 			nsupers,
+	// 			nrow_effective,
+	// 			ncol_effective,
+	// 			nsupc,
+	// 			level,
+	// 			u_nblk,
+	// 			bigresult_buf_h,
+	// 			xsup,
+
+	// 			l_nblk_bcol_prefixsum_h,
+	// 			l_brow_idx_hh,
+	// 			l_tile_offset_hh,
+	// 			l_bcol_localperm_hh,
+	// 			l_bcol_val_hh,
+	// 			l_nrow_prefixsum_h,
+	// 			l_rowidx_h,
+	// 			th_dense_browidx_h,
+	// 			l_rowidx_h, // 1?
+	// 			l_bcol_localperm_h, // 2
+	// 			l_tile_offset_h, // 3
+
+	// 			u_nblk_brow_prefixsum_h,
+	// 			u_bcol_idx_hh,
+	// 			u_tile_offset_hh,
+	// 			u_brow_localperm_hh,
+	// 			u_brow_val_hh,
+	// 			u_ncol_prefixsum_h,
+	// 			u_colidx_h,
+	// 			th_dense_browidx_h+nsupers,
+	// 			u_colidx_h, // 1?
+	// 			u_brow_localperm_h, // 2
+	// 			u_tile_offset_h // 3
+	// 		);
+	// 	}
+		
+	// 	if((errid = cudaDeviceSynchronize()) != cudaSuccess){
+	// 		printf("cuda error S-2 %d\n", errid);
+	// 		exit(1);
+	// 	}
+	// }
 
 
 }

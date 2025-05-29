@@ -449,8 +449,8 @@ void trojan_horse_batched_kernel(void *_param)
         // }
     }
 
-    // if (((level + 2) < nsupers) && (((level + 2) % LYD_PGRID_P) == (iam / LYD_PGRID_Q)) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
-    if (((level + 2) < nsupers) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
+    if (((level + 2) < nsupers) && (((level + 2) % LYD_PGRID_P) == (iam / LYD_PGRID_Q)) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
+    // if (((level + 2) < nsupers) && Llu->Ufstnz_br_ptr[LBi((level + 2), grid_glo)])
     {
         gpuMemcpyAsync(
             Llu->Unzval_br_ptr[LBi((level + 2), grid_glo)],
